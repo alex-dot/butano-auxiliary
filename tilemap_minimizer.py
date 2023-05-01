@@ -16,6 +16,7 @@ H_FLIP = 1024
 V_FLIP = 2048
 
 FORCE_IMAGE_GENERATION = False
+NAMESPACE = ""
 
 def pixel_compare(left, right):
     '''Does a pixel by pixel comparison of 8x8 tile. Returns True if all pixels are the same
@@ -231,9 +232,9 @@ def create_tilemap_header_file(bitmap, layers, width, height, bitmap_width, imag
     '''Creates a butano header file defining GBA compatible map data referencing the tilemap.'''
     with open("include/" + image_src.split(".")[0] + ".hpp","w",encoding='UTF-8') as hpp:
         name_upper = image_src.split(".")[0].upper()
-        hpp.write("#ifndef CT_" + name_upper + "_HPP\n")
-        hpp.write("#define CT_" + name_upper + "_HPP\n\n")
-        hpp.write("namespace ct::tilemaps {\n    const struct {\n")
+        hpp.write("#ifndef " + NAMESPACE.upper() + "_" + name_upper + "_HPP\n")
+        hpp.write("#define " + NAMESPACE.upper() + "_" + name_upper + "_HPP\n\n")
+        hpp.write("namespace " + NAMESPACE.lower() + "::tilemaps {\n    const struct {\n")
 
         for layer in layers:
             layer_name = layer.getAttribute("name")
@@ -356,10 +357,14 @@ if __name__ == "__main__":
             """)
     argparser.add_argument('-f','--force',dest='force',action='store_true',
                            help='Force image generation')
+    argparser.add_argument('-n','--namespace',dest='namespace',
+                           help='Set namespace for project')
     args = argparser.parse_args()
 
     if args.force:
         FORCE_IMAGE_GENERATION = True
+    if args.namespace:
+        NAMESPACE = args.namespace
 
     for file in os.listdir("graphics"):
         if file[-5:] == ".json" and file[-15:-6] != "_palette_":
