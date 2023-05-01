@@ -35,7 +35,7 @@ bn::regular_bg_map_item bg_item(
 );
 bn::regular_bg_map_ptr bg_map = bn::regular_bg_map_ptr::create(
     bg_item,
-   	tilemap,
+    tilemap,
     palette
 );
 bn::regular_bg_ptr bg = bn::regular_bg_ptr::create(0,0,bg_map);
@@ -55,6 +55,7 @@ It has the following limitations:
 - GBA maps must be multiples of 32\*8 pixels in each dimension (i.e. 32x32, 32x64, 64x96, etc.),so the tiled project needs to reflect that.
   - For example: If you are using 16x16 tilemaps, you must use 16x16, 16x32, 32x48, etc.
 - It currently only supports 16x16 tilemaps (others could work but haven't been tested yet)
+- It currently only supports one tilemap per tiled map
 
 ## How to set up in butano project
 
