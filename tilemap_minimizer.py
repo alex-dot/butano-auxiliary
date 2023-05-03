@@ -232,16 +232,20 @@ def create_tilemap_header_file(bitmap, layers, width, height, bitmap_width, imag
     '''Creates a butano header file defining GBA compatible map data referencing the tilemap.'''
     with open("include/" + image_src.split(".")[0] + ".hpp","w",encoding='UTF-8') as hpp:
         name_upper = image_src.split(".")[0].upper()
+        name_lower = image_src.split(".")[0].lower()
         hpp.write("#ifndef " + NAMESPACE.upper() + "_" + name_upper + "_HPP\n")
         hpp.write("#define " + NAMESPACE.upper() + "_" + name_upper + "_HPP\n\n")
-        hpp.write("namespace " + NAMESPACE.lower() + "::tilemaps {\n    const struct {\n")
+        hpp.write("#include \"globals.hpp\"\n")
+        hpp.write("namespace " + NAMESPACE.lower() + "::tilemaps {\n")
+        hpp.write("    static const tm_"+str(width)+"_"+str(height)+"_t "+name_lower+" = {\n")
 
         for layer in layers:
             layer_name = layer.getAttribute("name")
             tilemap = parse_csv_tmx_map(layer.getElementsByTagName("data")[0].firstChild.nodeValue)
-            hpp.write("        uint16_t " + layer_name + "["+str(width)+"*"+str(height)+"] = { \n")
+#            hpp.write("        uint16_t " + layer_name + "["+str(width)+"*"+str(height)+"] = { \n")
+            hpp.write("        // "+layer_name+" layer\n")
 
-            tilelist = "            "
+            tilelist = "        "
 
             # since the GBA puts part of the map into different screenblocks depending
             # on the maps dimensions, we use this conditional to alter the map arithmetic
@@ -272,7 +276,7 @@ def create_tilemap_header_file(bitmap, layers, width, height, bitmap_width, imag
                 if (i+1) % width == 0 and i > 0:
                     tilelist += "\n"
                 if (i+1) % 16 == 0 and i > 0:
-                    tilelist += "\n" + "            "
+                    tilelist += "\n" + "        "
 
                 if screenblock_flip and k == int(width/2)-1:
                     i += int(width/2)
@@ -291,12 +295,11 @@ def create_tilemap_header_file(bitmap, layers, width, height, bitmap_width, imag
                 k += 1
 
 
-            hpp.write(tilelist[:-15] + "\n")
-            hpp.write("        };\n")
+            hpp.write(tilelist[:-8])
 
-        hpp.write("        uint8_t width = " + str(width) + ";\n")
-        hpp.write("        uint8_t height = " + str(height) + ";\n")
-        hpp.write("\n    } "+image_src.split(".")[0]+";\n}\n\n#endif\n")
+        hpp.write("        " + str(width) + ", // width\n")
+        hpp.write("        " + str(height) + "  // height\n")
+        hpp.write("\n    };\n}\n\n#endif\n")
 
 def parse_csv_tmx_map(tmx_map):
     '''Parses tiled map file data (in CSV format).'''
@@ -349,6 +352,35 @@ def create_map(tilemap_json):
         image_src
     )
 
+    return {'width':map_width*2,'height':map_height*2}
+
+def create_tilemap_globals_file(tilemap_sizes):
+    '''Creates a butano header file defining map data structs to be used by tilemaps.'''
+    with open("include/globals_tilemaps.hpp","w",encoding='UTF-8') as hpp:
+        hpp.write("/*\n")
+        hpp.write(" * This file is part of XXX\n")
+        hpp.write(" *\n")
+        hpp.write(" * Copyright (c) 2023 Alexander Herr thissideup@gmx.net\n")
+        hpp.write(" *\n")
+        hpp.write(" * Defines tilemap structs in different sizes. This file is auto-generated and\n")
+        hpp.write(" * shall only be imported by globals.hpp. \n")
+        hpp.write(" */\n\n")
+        hpp.write("#ifndef CT_GLOBALS_TILEMAPS_HPP\n")
+        hpp.write("#define CT_GLOBALS_TILEMAPS_HPP\n\n")
+        hpp.write("namespace ct::tilemaps {\n\n")
+
+        for size in tilemap_sizes:
+            hpp.write("    struct tm_"+str(size['width'])+"_"+str(size['height'])+"_t {\n")
+            hpp.write("        uint16_t base["+str(size['width'])+"*"+str(size['height'])+"];\n")
+            hpp.write("        uint16_t props["+str(size['width'])+"*"+str(size['height'])+"];\n")
+            hpp.write("        uint16_t cover["+str(size['width'])+"*"+str(size['height'])+"];\n")
+            hpp.write("        uint8_t width;\n")
+            hpp.write("        uint8_t height;\n")
+            hpp.write("    };\n\n")
+
+        hpp.write("}\n\n")
+        hpp.write("#endif\n\n")
+
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(
         description="""
@@ -366,11 +398,15 @@ if __name__ == "__main__":
     if args.namespace:
         NAMESPACE = args.namespace
 
+    tilemap_sizes = []
     for file in os.listdir("graphics"):
         if file[-5:] == ".json" and file[-15:-6] != "_palette_":
             with open("graphics/" + file,encoding='UTF-8') as json_file:
                 tilemap_json = json.load(json_file)
                 if "tmx" in tilemap_json:
-                    create_map(tilemap_json)
+                    map_size = create_map(tilemap_json)
+                    tilemap_sizes.append(map_size)
+
+    create_tilemap_globals_file(tilemap_sizes)
 
     print("Finished")
