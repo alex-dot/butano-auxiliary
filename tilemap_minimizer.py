@@ -356,6 +356,9 @@ def create_map(tilemap_json):
 
 def create_tilemap_globals_file(tilemap_sizes):
     '''Creates a butano header file defining map data structs to be used by tilemaps.'''
+    tilemap_sizes = list(set([ "w"+str(x['width'])+"h"+str(x['height']) for x in tilemap_sizes ]))
+    tilemap_sizes = [ {'width':x.split('w')[1].split('h')[0],'height':x.split('h')[1]} for x in tilemap_sizes ]
+
     with open("include/globals_tilemaps.hpp","w",encoding='UTF-8') as hpp:
         hpp.write("/*\n")
         hpp.write(" * This file is part of XXX\n")
@@ -370,10 +373,10 @@ def create_tilemap_globals_file(tilemap_sizes):
         hpp.write("namespace ct::tilemaps {\n\n")
 
         for size in tilemap_sizes:
-            hpp.write("    struct tm_"+str(size['width'])+"_"+str(size['height'])+"_t {\n")
-            hpp.write("        uint16_t base["+str(size['width'])+"*"+str(size['height'])+"];\n")
-            hpp.write("        uint16_t props["+str(size['width'])+"*"+str(size['height'])+"];\n")
-            hpp.write("        uint16_t cover["+str(size['width'])+"*"+str(size['height'])+"];\n")
+            hpp.write("    struct tm_"+size['width']+"_"+size['height']+"_t {\n")
+            hpp.write("        uint16_t base["+size['width']+"*"+size['height']+"];\n")
+            hpp.write("        uint16_t props["+size['width']+"*"+size['height']+"];\n")
+            hpp.write("        uint16_t cover["+size['width']+"*"+size['height']+"];\n")
             hpp.write("        uint8_t width;\n")
             hpp.write("        uint8_t height;\n")
             hpp.write("    };\n\n")
