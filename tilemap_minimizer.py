@@ -17,6 +17,7 @@ V_FLIP = 2048
 
 FORCE_IMAGE_GENERATION = False
 NAMESPACE = ""
+PARSE_OBJECTS = False
 
 def pixel_compare(left, right):
     '''Does a pixel by pixel comparison of 8x8 tile. Returns True if all pixels are the same
@@ -228,7 +229,56 @@ def create_compressed_tileset(image_src):
     print("Tileset created")
     return tilemap_bitmap, columns
 
-def create_tilemap_header_file(bitmap, layers, width, height, bitmap_width, image_src):
+def write_spawnpoint_data(spawn_point, hpp):
+    hpp.write("    static const spawn_point_t spawn_point_"+spawn_point.getAttribute("name")+" = {\n")
+    hpp.write("        "+str(int(float(spawn_point.getAttribute("x"))))+",\n")
+    hpp.write("        "+str(int(float(spawn_point.getAttribute("y"))))+",\n")
+
+    face_direction, default_spawn_point = None, None
+    for prop in spawn_point.getElementsByTagName("property"):
+        if prop.getAttribute("name") == "default":
+            default_spawn_point = prop.getAttribute("value")
+        if prop.getAttribute("name") == "face_direction":
+            face_direction = prop.getAttribute("value")
+
+    if face_direction == "up":
+        hpp.write("        CT_CHAR_FACE_UP,\n")
+    elif face_direction == "down":
+        hpp.write("        CT_CHAR_FACE_DOWN,\n")
+    elif face_direction == "left":
+        hpp.write("        CT_CHAR_FACE_LEFT,\n")
+    elif face_direction == "right":
+        hpp.write("        CT_CHAR_FACE_RIGHT,\n")
+    else:
+        raise ValueError("In spawn_point construction: Invalid face direction found: " + face_direction)
+
+    hpp.write("        "+default_spawn_point+",\n")
+
+    name = spawn_point.getAttribute("name")
+    if len(name) > 5:
+        print("Warning: Name of spawn_point ("+name+") too long, contracted to: "+name[:5])
+
+    hpp.write("        \""+name[0:5]+"\"\n")
+    hpp.write("    };\n")
+
+    return name
+
+def write_object_data(objects, hpp):
+    spawn_point_names = []
+
+    for obj in objects.getElementsByTagName("object"):
+        if obj.getAttribute("type") == "spawn_point":
+            spawn_point_names.append(write_spawnpoint_data(obj, hpp))
+
+    hpp.write("    static const spawn_point_t spawn_points["+str(len(spawn_point_names))+"] = {\n") # spawn_point count
+    for name in spawn_point_names:
+        hpp.write("        spawn_point_"+name+"\n")
+    hpp.write("    };\n\n")
+    hpp.write("    static const metadata_t metadata = {\n")
+    hpp.write("        uint8_t("+str(len(spawn_point_names))+")\n")                                 # spawn_point count
+    hpp.write("    };\n\n")
+
+def create_tilemap_header_file(bitmap, layers, objects, width, height, bitmap_width, image_src):
     '''Creates a butano header file defining GBA compatible map data referencing the tilemap.'''
     with open("include/" + image_src.split(".")[0] + ".hpp","w",encoding='UTF-8') as hpp:
         name_upper = image_src.split(".")[0].upper()
@@ -236,13 +286,16 @@ def create_tilemap_header_file(bitmap, layers, width, height, bitmap_width, imag
         hpp.write("#ifndef " + NAMESPACE.upper() + "_" + name_upper + "_HPP\n")
         hpp.write("#define " + NAMESPACE.upper() + "_" + name_upper + "_HPP\n\n")
         hpp.write("#include \"globals.hpp\"\n")
-        hpp.write("namespace " + NAMESPACE.lower() + "::tilemaps {\n")
-        hpp.write("    static const tm_t<"+str(width)+","+str(height)+"> "+name_lower+" = {\n")
+        hpp.write("namespace " + NAMESPACE.lower() + "::tilemaps::"+name_lower+" {\n")
+
+        if PARSE_OBJECTS and objects:
+            write_object_data(objects, hpp)
+
+        hpp.write("    static const tm_t<"+str(width)+","+str(height)+"> tilemap = {\n")
 
         for layer in layers:
             layer_name = layer.getAttribute("name")
             tilemap = parse_csv_tmx_map(layer.getElementsByTagName("data")[0].firstChild.nodeValue)
-#            hpp.write("        uint16_t " + layer_name + "["+str(width)+"*"+str(height)+"] = { \n")
             hpp.write("        // "+layer_name+" layer\n")
 
             tilelist = "        "
@@ -344,9 +397,14 @@ def create_map(tilemap_json):
         tilemap, tilemap_width = create_compressed_tileset(image_src)
 
     print("Converting map data")
+    objects = None
+    if PARSE_OBJECTS:
+        for object_group in tilemap_xml.documentElement.getElementsByTagName("objectgroup"):
+            if object_group.getAttribute("name") == "actors":
+                objects = object_group
     layers = tilemap_xml.documentElement.getElementsByTagName("layer")
     create_tilemap_header_file(
-        tilemap, layers,
+        tilemap, layers, objects,
         map_width*2, map_height*2,
         int(tilemap_width*8/16),  # 16 = tilesize
         image_src
@@ -367,7 +425,10 @@ def create_tilemap_globals_file():
         hpp.write(" */\n\n")
         hpp.write("#ifndef CT_GLOBALS_TILEMAPS_HPP\n")
         hpp.write("#define CT_GLOBALS_TILEMAPS_HPP\n\n")
-        hpp.write("namespace ct::tilemaps {\n\n")
+        if NAMESPACE:
+            hpp.write("namespace "+NAMESPACE.lower()+"::tilemaps {\n\n")
+        else:
+            hpp.write("namespace tilemaps {\n\n")
 
         hpp.write("    template<uint16_t width_, uint16_t height_>\n")
         hpp.write("    struct tm_t {\n")
@@ -377,6 +438,18 @@ def create_tilemap_globals_file():
         hpp.write("        uint16_t width = width_;\n")
         hpp.write("        uint16_t height = height_;\n")
         hpp.write("    };\n\n")
+
+        if PARSE_OBJECTS:
+            hpp.write("    struct spawn_point_t {\n")
+            hpp.write("        uint16_t x;\n")
+            hpp.write("        uint16_t y;\n")
+            hpp.write("        uint8_t direction;\n")
+            hpp.write("        bool    dflt;\n")
+            hpp.write("        char    name[6];\n")
+            hpp.write("    };\n")
+            hpp.write("    struct metadata_t {\n")
+            hpp.write("        uint8_t number_of_spawn_points;\n")
+            hpp.write("    };\n\n")
 
         hpp.write("}\n\n")
         hpp.write("#endif\n\n")
@@ -391,12 +464,16 @@ if __name__ == "__main__":
                            help='Force image generation')
     argparser.add_argument('-n','--namespace',dest='namespace',
                            help='Set namespace for project')
+    argparser.add_argument('-a','--create-actors',dest='actors',action='store_true',
+                           help='Parse object layers')
     args = argparser.parse_args()
 
     if args.force:
         FORCE_IMAGE_GENERATION = True
     if args.namespace:
         NAMESPACE = args.namespace
+    if args.actors:
+        PARSE_OBJECTS = True
 
     for file in os.listdir("graphics"):
         if file[-5:] == ".json" and file[-15:-6] != "_palette_":
