@@ -259,23 +259,46 @@ def write_spawnpoint_data(spawn_point, hpp):
         print("Warning: Name of spawn_point ("+name+") too long, contracted to: "+name[:5])
 
     hpp.write("        \""+name[0:5]+"\"\n")
-    hpp.write("    };\n")
+    hpp.write("    };\n\n")
 
     return name
 
+def write_boundary_data(blocker, hpp):
+    number_of_points = len(blocker.getElementsByTagName("polygon")[0].getAttribute("points").split(" "))
+    origin = (blocker.getAttribute("x"),blocker.getAttribute("y"))
+
+    hpp.write("    static const polygon_t boundaries["+str(number_of_points*2)+"] = {\n")
+
+    for point in blocker.getElementsByTagName("polygon")[0].getAttribute("points").split(" "):
+        x = int(float(point.split(",")[0]) + float(origin[0]))
+        x = str(0) if x < 0 else str(x)
+        y = int(float(point.split(",")[1]) + float(origin[1]))
+        y = str(0) if y < 0 else str(y)
+        hpp.write("        "+x+","+y+",\n")
+
+    hpp.write("    };\n")
+    hpp.write("    static const boundary_metadata_t boundary_metadata[1] {\n")
+    hpp.write("        "+str(number_of_points)+"\n")
+    hpp.write("    };\n\n")
+
 def write_object_data(objects, hpp):
     spawn_point_names = []
+    boundary_count = 0
 
     for obj in objects.getElementsByTagName("object"):
         if obj.getAttribute("type") == "spawn_point":
             spawn_point_names.append(write_spawnpoint_data(obj, hpp))
+        if obj.getAttribute("type") == "boundary":
+            write_boundary_data(obj, hpp)
+            boundary_count += 1
 
-    hpp.write("    static const spawn_point_t spawn_points["+str(len(spawn_point_names))+"] = {\n") # spawn_point count
+    hpp.write("    static const spawn_point_t spawn_points["+str(len(spawn_point_names))+"] = {\n")
     for name in spawn_point_names:
         hpp.write("        spawn_point_"+name+"\n")
     hpp.write("    };\n\n")
     hpp.write("    static const metadata_t metadata = {\n")
-    hpp.write("        uint8_t("+str(len(spawn_point_names))+")\n")                                 # spawn_point count
+    hpp.write("        uint8_t("+str(len(spawn_point_names))+"),\n")             # spawn_point count
+    hpp.write("        uint8_t("+str(boundary_count)+")\n")                      # boundary count
     hpp.write("    };\n\n")
 
 def create_tilemap_header_file(bitmap, layers, objects, width, height, bitmap_width, image_src):
@@ -449,7 +472,18 @@ def create_tilemap_globals_file():
             hpp.write("    };\n")
             hpp.write("    struct metadata_t {\n")
             hpp.write("        uint8_t number_of_spawn_points;\n")
+            hpp.write("        uint8_t number_of_boundaries;\n")
             hpp.write("    };\n\n")
+            hpp.write("    struct point_t {\n")
+            hpp.write("        uint16_t x;\n")
+            hpp.write("        uint16_t y;\n")
+            hpp.write("    };\n")
+            hpp.write("    struct polygon_t {\n")
+            hpp.write("        point_t point;\n")
+            hpp.write("    };\n")
+            hpp.write("    struct boundary_metadata_t {\n")
+            hpp.write("        uint32_t number_of_points;\n")
+            hpp.write("    };\n")
 
         hpp.write("}\n\n")
         hpp.write("#endif\n\n")
