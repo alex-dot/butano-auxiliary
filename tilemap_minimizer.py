@@ -286,9 +286,10 @@ def write_object_data(objects, hpp):
     boundary_count = 0
 
     for obj in objects.getElementsByTagName("object"):
-        if obj.getAttribute("type") == "spawn_point":
+        if obj.getAttribute("type") == "spawn_point" or obj.getAttribute("class") == "spawn_point":
+            print("spawn_point")
             spawn_point_names.append(write_spawnpoint_data(obj, hpp))
-        if obj.getAttribute("type") == "boundary":
+        if obj.getAttribute("type") == "boundary" or obj.getAttribute("class") == "boundary":
             write_boundary_data(obj, hpp)
             boundary_count += 1
 
