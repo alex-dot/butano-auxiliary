@@ -235,7 +235,7 @@ def create_compressed_tileset(image_src):
     print("Tileset created")
     return tilemap_bitmap, columns
 
-def create_tilemap_header_file(spawn_point_names, boundary_data, width, height, image_src):
+def create_tilemap_header_file(spawn_point_names, boundary_data, gateway_data, width, height, image_src):
     '''Creates a butano header file defining GBA compatible map data referencing the tilemap.'''
     with open("include/" + image_src.split(".")[0] + ".hpp","w",encoding='UTF-8') as hpp:
         name_upper = image_src.split(".")[0].upper()
@@ -249,6 +249,10 @@ def create_tilemap_header_file(spawn_point_names, boundary_data, width, height, 
             for name in spawn_point_names:
                 hpp.write("    extern const spawn_point_t spawn_point_"+name+";\n")
             hpp.write("    extern const spawn_point_t spawn_points["+str(len(spawn_point_names))+"];\n")
+        if PARSE_ACTORS and gateway_data:
+            number_of_points = [x['number_of_points'] for x in gateway_data]
+            hpp.write("    extern const polygon_t gateways["+str(sum(number_of_points)*2)+"];\n")
+            hpp.write("    extern const boundary_metadata_t gateway_metadata["+str(len(gateway_data))+"];\n")
         if PARSE_BOUNDARIES and boundary_data:
             number_of_points = [x['number_of_points'] for x in boundary_data]
             hpp.write("    extern const polygon_t boundaries["+str(sum(number_of_points)*2)+"];\n")
@@ -333,9 +337,9 @@ def create_tilemap_data(bitmap, layers, width, height, bitmap_width, cpp):
     cpp.write("        " + str(height) + "  // height\n")
     cpp.write("\n    };\n")
 
-def write_boundary_data(boundary_data, cpp):
+def write_boundary_data(boundary_data, typename, cpp):
     number_of_points = [x['number_of_points'] for x in boundary_data]
-    cpp.write("    const polygon_t boundaries["+str(sum(number_of_points)*2)+"] = {\n")
+    cpp.write("    const polygon_t "+typename+"["+str(sum(number_of_points)*2)+"] = {\n")
 
     for boundary in boundary_data:
         for point in boundary['points']:
@@ -345,14 +349,14 @@ def write_boundary_data(boundary_data, cpp):
 
     return
 
-def calculate_boundary_data(blocker):
-    number_of_points = len(blocker.getElementsByTagName("polygon")[0].getAttribute("points").split(" "))
-    origin = (blocker.getAttribute("x"),blocker.getAttribute("y"))
+def calculate_boundary_data(boundary):
+    number_of_points = len(boundary.getElementsByTagName("polygon")[0].getAttribute("points").split(" "))
+    origin = (boundary.getAttribute("x"),boundary.getAttribute("y"))
 
     min_x,max_x,min_y,max_y = math.inf,0,math.inf,0
     points = []
 
-    for point in blocker.getElementsByTagName("polygon")[0].getAttribute("points").split(" "):
+    for point in boundary.getElementsByTagName("polygon")[0].getAttribute("points").split(" "):
         x = int(float(point.split(",")[0]) + float(origin[0]))
         x = 0 if x < 0 else x
         y = int(float(point.split(",")[1]) + float(origin[1]))
@@ -365,9 +369,29 @@ def calculate_boundary_data(blocker):
 
         points.append({'x':str(x),'y':str(y)})
 
-    return {'number_of_points':number_of_points, 'points':points,'min_x':str(min_x),'max_x':str(max_x),'min_y':str(min_y),'max_y':str(max_y)}
+    map_name,spawn_point_name = None,None
+    for prop in boundary.getElementsByTagName("property"):
+        if prop.getAttribute("name") == "destination":
+            map_name = prop.getAttribute("value")
+        if prop.getAttribute("name") == "spawnpoint":
+            spawn_point_name = prop.getAttribute("value")
+
+    return {
+                'number_of_points':number_of_points, 
+                'points':points,
+                'min_x':str(min_x),
+                'max_x':str(max_x),
+                'min_y':str(min_y),
+                'max_y':str(max_y),
+                'map_name':map_name,
+                'spawn_point_name':spawn_point_name
+            }
 
 def write_spawnpoint_data(spawn_point, cpp):
+    name = spawn_point.getAttribute("name")
+    if len(name) > 5:
+        print("Warning: Name of spawn_point ("+name+") too long, contracted to: "+name[:5])
+
     cpp.write("    const spawn_point_t spawn_point_"+spawn_point.getAttribute("name")+" = {\n")
     cpp.write("        "+str(int(float(spawn_point.getAttribute("x"))))+",\n")
     cpp.write("        "+str(int(float(spawn_point.getAttribute("y"))))+",\n")
@@ -388,13 +412,9 @@ def write_spawnpoint_data(spawn_point, cpp):
     elif face_direction == "right":
         cpp.write("        "+NAMESPACE_UNDERSCORE.upper()+"CHAR_FACE_RIGHT,\n")
     else:
-        raise ValueError("In spawn_point construction: Invalid face direction found: " + face_direction)
+        raise ValueError("In spawn_point construction: Invalid face direction found: " + name)
 
     cpp.write("        "+default_spawn_point+",\n")
-
-    name = spawn_point.getAttribute("name")
-    if len(name) > 5:
-        print("Warning: Name of spawn_point ("+name+") too long, contracted to: "+name[:5])
 
     cpp.write("        \""+name[0:5]+"\"\n")
     cpp.write("    };\n")
@@ -404,15 +424,19 @@ def write_spawnpoint_data(spawn_point, cpp):
 def write_object_data(actors, boundaries, cpp):
     spawn_point_names = []
     boundary_data = []
+    gateway_data = []
 
     for obj in actors.getElementsByTagName("object"):
         if obj.getAttribute("type") == "spawn_point" or obj.getAttribute("class") == "spawn_point":
             spawn_point_names.append(write_spawnpoint_data(obj, cpp))
+        if obj.getAttribute("type") == "gateway" or obj.getAttribute("class") == "gateway":
+            gateway_data.append(calculate_boundary_data(obj))
 
     for obj in boundaries.getElementsByTagName("object"):
         boundary_data.append(calculate_boundary_data(obj))
 
-    write_boundary_data(boundary_data, cpp)
+    write_boundary_data(gateway_data, "gateways", cpp)
+    write_boundary_data(boundary_data, "boundaries", cpp)
 
     cpp.write("\n    const boundary_metadata_t boundary_metadata["+str(len(boundary_data))+"] {\n")
     for boundary in boundary_data:
@@ -420,21 +444,35 @@ def write_object_data(actors, boundaries, cpp):
         cpp.write(str(boundary['min_x'])+",")
         cpp.write(str(boundary['max_x'])+",")
         cpp.write(str(boundary['min_y'])+",")
-        cpp.write(str(boundary['max_y'])+",\n")
+        cpp.write(str(boundary['max_y'])+",")
+        cpp.write("\"\",\"\",\n")
     cpp.write("    };\n\n")
+
+    cpp.write("    const boundary_metadata_t gateway_metadata["+str(len(gateway_data))+"] {\n")
+    for gateway in gateway_data:
+        cpp.write("        "+str(gateway['number_of_points'])+",")
+        cpp.write(str(gateway['min_x'])+",")
+        cpp.write(str(gateway['max_x'])+",")
+        cpp.write(str(gateway['min_y'])+",")
+        cpp.write(str(gateway['max_y'])+",")
+        cpp.write("\""+gateway['map_name']+"\",")
+        cpp.write("\""+gateway['spawn_point_name']+"\",\n")
+    cpp.write("    };\n\n")
+
     cpp.write("    const spawn_point_t spawn_points["+str(len(spawn_point_names))+"] = {\n")
     for name in spawn_point_names:
         cpp.write("        spawn_point_"+name+",\n")
     cpp.write("    };\n\n")
     cpp.write("    const metadata_t metadata = {\n")
-    cpp.write("        uint8_t("+str(len(spawn_point_names))+"),\n")             # spawn_point count
-    cpp.write("        uint8_t("+str(len(boundary_data))+")\n")           # boundary count
+    cpp.write("        uint8_t("+str(len(spawn_point_names))+"),\n")      # spawn_point count
+    cpp.write("        uint8_t("+str(len(boundary_data))+"),\n")           # boundary count
+    cpp.write("        uint8_t("+str(len(gateway_data))+")\n")           # gateway count
     cpp.write("    };\n\n")
 
-    return spawn_point_names,boundary_data
+    return spawn_point_names,boundary_data,gateway_data
 
 def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, image_src):
-    spawn_point_names,boundary_data = None,None
+    spawn_point_names,boundary_data,gateway_data = None,None,None
     name_upper = image_src.split(".")[0].upper()
     name_lower = image_src.split(".")[0].lower()
 
@@ -443,23 +481,24 @@ def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, b
         cpp.write("namespace " + NAMESPACE_COLON.lower() + "tilemaps::"+name_lower+" {\n")
 
         if (PARSE_ACTORS and actors) or (PARSE_BOUNDARIES and boundaries):
-            spawn_point_names,boundary_data = write_object_data(actors, boundaries, cpp)
+            spawn_point_names,boundary_data,gateway_data = write_object_data(actors, boundaries, cpp)
 
         create_tilemap_data(bitmap, layers, width, height, bitmap_width, cpp)
 
         cpp.write("}\n")
 
-    return spawn_point_names,boundary_data
+    return spawn_point_names,boundary_data,gateway_data
 
 def create_data_files(bitmap, layers, actors, boundaries, width, height, bitmap_width, image_src):
-    spawn_point_names,boundary_data = create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, image_src)
-    create_tilemap_header_file(spawn_point_names, boundary_data, width, height, image_src)
+    spawn_point_names,boundary_data,gateway_data = create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, image_src)
+    create_tilemap_header_file(spawn_point_names, boundary_data, gateway_data, width, height, image_src)
 
 def create_map(tilemap_json):
     '''Parses butano tilemap JSON file in graphics/ to extract tiled map location, then parses
        tiled map file. Calls subsequent functions to minimize all referenced tilemaps and create
        butano header file containing map data. Expects "tmx" value in JSON file to point to tiled 
        map file.'''
+    map_name = tilemap_json["name"]
     tilemap_tmx_path = "graphics/ressources/" + tilemap_json["tmx"]
     tilemap_xml = xmlparse(tilemap_tmx_path)
     tilemap_tmx = tilemap_xml.documentElement.getElementsByTagName("tileset")[0]\
@@ -489,11 +528,13 @@ def create_map(tilemap_json):
     else:
         tilemap, tilemap_width = create_compressed_tileset(image_src)
 
-    print("Converting map data with dimensions: "+str(map_width*2)+"x"+str(map_height*2))
+    print("Generating map "+map_name+" with dimensions: "+str(map_width*2)+"x"+str(map_height*2))
     if not FORCE_MAP_DATA_GENERATION and \
-       os.path.getctime("include/" + image_src.split(".")[0] + ".hpp") >= \
+       os.path.exists("include/" + map_name + ".hpp") and \
+       os.path.getctime("include/" + map_name + ".hpp") >= \
            os.path.getctime(tilemap_tmx_path) and \
-       os.path.getctime("src/" + image_src.split(".")[0] + ".cpp") >= \
+       os.path.exists("src/" + map_name + ".cpp") and \
+       os.path.getctime("src/" + map_name + ".cpp") >= \
            os.path.getctime(tilemap_tmx_path):
         print("Source tiled map not modified, skipping generation of new data files")
     else:
@@ -508,7 +549,7 @@ def create_map(tilemap_json):
             tilemap, layers, actors, boundaries,
             map_width*2, map_height*2,
             int(tilemap_width*8/16),  # 16 = tilesize
-            image_src
+            map_name
         )
 
     return
@@ -548,7 +589,7 @@ def create_tilemap_globals_file():
             hpp.write("        bool    dflt;\n")
             hpp.write("        char    name[6];\n")
             hpp.write("    };\n")
-        if PARSE_BOUNDARIES:
+        if PARSE_ACTORS or PARSE_BOUNDARIES:
             hpp.write("    struct point_t {\n")
             hpp.write("        uint16_t x;\n")
             hpp.write("        uint16_t y;\n")
@@ -562,11 +603,14 @@ def create_tilemap_globals_file():
             hpp.write("        uint16_t max_x;\n")
             hpp.write("        uint16_t min_y;\n")
             hpp.write("        uint16_t max_y;\n")
+            hpp.write("        char map_name[9];\n")
+            hpp.write("        char spawn_point_name[6];\n")
             hpp.write("    };\n")
         if PARSE_ACTORS or PARSE_BOUNDARIES:
             hpp.write("    struct metadata_t {\n")
             hpp.write("        uint8_t number_of_spawn_points;\n")
             hpp.write("        uint8_t number_of_boundaries;\n")
+            hpp.write("        uint8_t number_of_gateways;\n")
             hpp.write("    };\n\n")
 
         hpp.write("}\n\n")
@@ -617,12 +661,10 @@ if __name__ == "__main__":
     if args.globals:
         CREATE_GLOBALS_FILE = True
 
-    for file in os.listdir("graphics"):
-        if file[-5:] == ".json" and file[-15:-6] != "_palette_":
-            with open("graphics/" + file,encoding='UTF-8') as json_file:
-                tilemap_json = json.load(json_file)
-                if "tmx" in tilemap_json:
-                    create_map(tilemap_json)
+    with open("graphics/ressources/maps.json") as maps_json:
+        maps = json.load(maps_json)
+        for tilemap in maps:
+            create_map(tilemap)
 
     if CREATE_GLOBALS_FILE:
         create_tilemap_globals_file()
