@@ -261,6 +261,10 @@ def create_tilemap_header_file(spawn_point_names, boundary_data, gateway_data, w
             hpp.write("    extern const metadata_t metadata;\n")
 
         hpp.write("    extern const tm_t<"+str(width)+","+str(height)+"> tilemap;\n")
+        hpp.write("\n}\n\n")
+
+        hpp.write("namespace " + NAMESPACE_COLON.lower() + "texts::"+name_lower+" {\n")
+        hpp.write("    extern const text_t text;\n")
 
         hpp.write("\n}\n\n#endif\n")
 
@@ -421,16 +425,22 @@ def write_spawnpoint_data(spawn_point, cpp):
 
     return name
 
+def calculate_chest_data(chest):
+    return ""
+
 def write_object_data(actors, boundaries, cpp):
     spawn_point_names = []
     boundary_data = []
     gateway_data = []
+    chest_data = []
 
     for obj in actors.getElementsByTagName("object"):
         if obj.getAttribute("type") == "spawn_point" or obj.getAttribute("class") == "spawn_point":
             spawn_point_names.append(write_spawnpoint_data(obj, cpp))
         if obj.getAttribute("type") == "gateway" or obj.getAttribute("class") == "gateway":
             gateway_data.append(calculate_boundary_data(obj))
+        if obj.getAttribute("type") == "chest" or obj.getAttribute("class") == "chest":
+            chest_data.append(calculate_chest_data(obj))
 
     for obj in boundaries.getElementsByTagName("object"):
         boundary_data.append(calculate_boundary_data(obj))
@@ -478,6 +488,12 @@ def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, b
 
     with open("src/" + name_lower + ".cpp","w",encoding='UTF-8') as cpp:
         cpp.write("#include \""+name_lower+".hpp\"\n\n")
+
+        # TODO requires proper handling
+        cpp.write("namespace " + NAMESPACE_COLON.lower() + "texts::"+name_lower+" {\n")
+        cpp.write("    const text_t text = \"Crono received 1 potion.\";\n")
+        cpp.write("}\n\n")
+
         cpp.write("namespace " + NAMESPACE_COLON.lower() + "tilemaps::"+name_lower+" {\n")
 
         if (PARSE_ACTORS and actors) or (PARSE_BOUNDARIES and boundaries):
