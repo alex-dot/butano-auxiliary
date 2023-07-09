@@ -265,6 +265,12 @@ def create_tilemap_header_file(spawn_point_names, boundary_data, gateway_data, w
 
         hpp.write("namespace " + NAMESPACE_COLON.lower() + "texts::"+name_lower+" {\n")
         hpp.write("    extern const text_t text;\n")
+        hpp.write("\n}\n\n")
+
+        hpp.write("namespace " + NAMESPACE_COLON.lower() + "actors::"+name_lower+" {\n")
+        hpp.write("    extern const container_t chest01;\n")
+        hpp.write("    extern const container_t* containers;\n")
+        hpp.write("    alignas(int) extern const metadata_t metadata;\n")
 
         hpp.write("\n}\n\n#endif\n")
 
@@ -425,22 +431,48 @@ def write_spawnpoint_data(spawn_point, cpp):
 
     return name
 
-def calculate_chest_data(chest):
-    return ""
+def write_actor_data(obj, cpp):
+    item_data = ["","potion"]
+    chest_data = []
+    for obj in obj.getElementsByTagName("object"):
+        if obj.getAttribute("type") == "chest" or obj.getAttribute("class") == "chest":
+            cpp.write("    const container_t "+obj.getAttribute("name")+" = {\n")
+            for prop in obj.getElementsByTagName("property"):
+                if prop.getAttribute("name") == "contains":
+                    for item in prop.getAttribute("value").split(")"):
+                        if item:
+                            item_name = item_data[int(item.split(",")[0][1:])]
+                            item_count = item.split(",")[1]
+                            tlx = str(int(float(obj.getAttribute("x"))))
+                            tly = str(int(float(obj.getAttribute("y")))-int(float(obj.getAttribute("height"))))
+                            brx = str(int(float(obj.getAttribute("x")))+int(float(obj.getAttribute("width"))))
+                            bry = str(int(float(obj.getAttribute("y"))))
+                            cpp.write("        \""+item_name+"\","+item_count+",\n")
+            cpp.write("        "+tlx+","+tly+",\n")
+            cpp.write("        "+brx+","+bry+"\n")
+            cpp.write("    };\n")
+            chest_data.append({'name':obj.getAttribute("name")})
+
+    cpp.write("\n    const container_t* containers = {\n")
+    for chest in chest_data:
+        cpp.write("        &"+chest['name']+"\n")
+    cpp.write("    };\n")
+    cpp.write("    const metadata_t metadata = {\n")
+    cpp.write("        "+str(len(chest_data))+"\n")
+    cpp.write("    };\n")
+
+    return
 
 def write_object_data(actors, boundaries, cpp):
     spawn_point_names = []
     boundary_data = []
     gateway_data = []
-    chest_data = []
 
     for obj in actors.getElementsByTagName("object"):
         if obj.getAttribute("type") == "spawn_point" or obj.getAttribute("class") == "spawn_point":
             spawn_point_names.append(write_spawnpoint_data(obj, cpp))
         if obj.getAttribute("type") == "gateway" or obj.getAttribute("class") == "gateway":
             gateway_data.append(calculate_boundary_data(obj))
-        if obj.getAttribute("type") == "chest" or obj.getAttribute("class") == "chest":
-            chest_data.append(calculate_chest_data(obj))
 
     for obj in boundaries.getElementsByTagName("object"):
         boundary_data.append(calculate_boundary_data(obj))
@@ -492,6 +524,11 @@ def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, b
         # TODO requires proper handling
         cpp.write("namespace " + NAMESPACE_COLON.lower() + "texts::"+name_lower+" {\n")
         cpp.write("    const text_t text = \"Crono received 1 potion.\";\n")
+        cpp.write("}\n\n")
+
+        # TODO requires proper handling
+        cpp.write("namespace " + NAMESPACE_COLON.lower() + "actors::"+name_lower+" {\n")
+        write_actor_data(actors,cpp)
         cpp.write("}\n\n")
 
         cpp.write("namespace " + NAMESPACE_COLON.lower() + "tilemaps::"+name_lower+" {\n")
