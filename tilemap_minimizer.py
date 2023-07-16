@@ -82,7 +82,7 @@ def compare_tiles(tilemap, columns, rows):
 
     return tilemap_bitmap,unique_tile_count
 
-def create_tilemap_palette(tilemap_min,image_src):
+def create_tilemap_palette(tilemap_min,image_file_name):
     '''Creating bmp palette from a tilemap. Appends butano JSON file of palette file with
        correct number of found colors.'''
     tilemap_min_width = tilemap_min.width
@@ -135,20 +135,22 @@ def create_tilemap_palette(tilemap_min,image_src):
             i += 1
             j = 0
 
-    tilemap_palette.save("graphics/"+image_src.split(".")[0]+"_palette_1.bmp", "BMP")
+    tilemap_palette.save("graphics/"+image_file_name+"_palette.bmp", "BMP")
 
-    pinfo = None
-    with open("graphics/"+image_src.split(".")[0]+"_palette_1.json","r",encoding='UTF-8')\
+    with open("graphics/"+image_file_name+"_palette.json","w",encoding='UTF-8')\
       as json_file:
-        pinfo = json.load(json_file)
-    with open("graphics/"+image_src.split(".")[0]+"_palette_1.json","w",encoding='UTF-8')\
-      as json_file:
-        pinfo["colors_count"] = str(len(palette_list))
-        json.dump(pinfo,json_file,indent="  ")
+        json_file.write("{\n")
+        json_file.write("    \"type\": \"bg_palette\",\n")
+        if len(palette_list) <= 16:
+            json_file.write("    \"bpp_mode\": \"bpp_4\",\n")
+        else:
+            json_file.write("    \"bpp_mode\": \"bpp_8\",\n")
+        json_file.write("    \"colors_count\": \"" + str(len(palette_list)) + "\"\n")
+        json_file.write("}")
 
     return palette_list, palette_list_flat
 
-def create_compressed_tileset(image_src):
+def create_compressed_tileset(image_src,image_file_name):
     '''Creating minimized tilemap from a regular tilemap file by searching for duplicated
        tiles. Supports horizontal and vertical flipping.'''
     tilemap_src = Image.open("graphics/ressources/" + image_src).convert('RGB')
@@ -195,7 +197,7 @@ def create_compressed_tileset(image_src):
             tilemap_bitmap[y*columns+x]["non_unique_tile_count"] = non_unique_tiles
 
     print("Minimized tilemap created, extracting palette...")
-    palette_list, palette_list_flat = create_tilemap_palette(tilemap_min_rgb,image_src)
+    palette_list, palette_list_flat = create_tilemap_palette(tilemap_min_rgb,image_file_name)
 
     print("Palette extracted, applying to minimized tileset...")
     tilemap_min_p = Image.new(
@@ -214,10 +216,20 @@ def create_compressed_tileset(image_src):
                     pindex = palette_list.index((255,0,255))
             tilemap_min_p.putpixel((x,y),pindex)
 
-    tilemap_min_p.save("graphics/" + image_src.split(".")[0] + ".bmp","BMP")
+    tilemap_min_p.save("graphics/" + image_file_name + ".bmp","BMP")
+
+    with open("graphics/" + image_file_name + ".json","w",encoding='UTF-8')\
+      as json_file:
+        json_file.write("{\n")
+        json_file.write("    \"type\": \"regular_bg_tiles\",\n")
+        if len(palette_list) <= 16:
+            json_file.write("    \"bpp_mode\": \"bpp_4\"\n")
+        else:
+            json_file.write("    \"bpp_mode\": \"bpp_8\"\n")
+        json_file.write("}\n")
 
     print("Palette applied, storing meta information in ressource folder...")
-    with open("graphics/ressources/" + image_src.split(".")[0] + ".json","w",encoding='UTF-8')\
+    with open("graphics/ressources/" + image_file_name + ".json","w",encoding='UTF-8')\
       as json_output:
         output = {'columns':columns,'tilemap':tilemap_bitmap}
         json.dump(output, json_output)
@@ -238,29 +250,29 @@ def create_map(tilemap_json):
     tilemap_tsx = xmlparse("graphics/ressources/" + tilemap_tmx)
     image_src = tilemap_tsx.documentElement.getElementsByTagName("image")[0]\
                                            .getAttribute("source")
+    tilesize = int(tilemap_tsx.documentElement.getAttribute("tilewidth"))
+    image_file_name = image_src.split("/")[len(image_src.split("/"))-1]
+    image_file_name = image_file_name.split(".")[len(image_file_name.split("."))-2].lower()
     map_width = int(tilemap_xml.documentElement.getAttribute("width"))
     map_height = int(tilemap_xml.documentElement.getAttribute("height"))
 
-    print("creating compressed tileset: " + image_src[:-4])
-    if len(image_src.split(".")) > 2 :
-        print("Error: Image files containing periods (.) in their filenames are not supported.")
-        sys.exit()
+    print("creating compressed tileset: " + image_file_name)
     bitmap, tilemap_width = "", ""
     if not config.FORCE_IMAGE_GENERATION and \
-       os.path.exists("graphics/ressources/" + image_src.split(".")[0] + ".json") and \
-       os.path.getctime("graphics/" + image_src.split(".")[0] + ".bmp") >= \
+       os.path.exists("graphics/ressources/" + image_file_name + ".json") and \
+       os.path.getctime("graphics/" + image_file_name + ".bmp") >= \
            os.path.getctime("graphics/ressources/" + image_src):
         print("Source image not modified, skipping generation of new minified tileset")
         tilemap_json = None
-        with open("graphics/ressources/" + image_src.split(".")[0] + ".json",encoding='UTF-8')\
+        with open("graphics/ressources/" + image_file_name + ".json",encoding='UTF-8')\
           as tilemap_json_file:
             tilemap_json = json.load(tilemap_json_file)
         bitmap = tilemap_json["tilemap"]
         tilemap_width = int(tilemap_json["columns"])
     else:
-        bitmap, tilemap_width = create_compressed_tileset(image_src)
+        bitmap, tilemap_width = create_compressed_tileset(image_src,image_file_name)
 
-    return tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width
+    return tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width,tilesize
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(

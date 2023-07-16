@@ -65,8 +65,8 @@ if __name__ == "__main__":
     with open("graphics/ressources/maps.json") as maps_json:
         maps = json.load(maps_json)
         for tilemap in maps:
-            tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width = create_map(tilemap)
-            create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width)
+            tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width,tilesize = create_map(tilemap)
+            create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width,tilesize)
 
     if config.CREATE_GLOBALS_FILE:
         create_tilemap_globals_file()

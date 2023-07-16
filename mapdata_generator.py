@@ -26,15 +26,15 @@ def create_tilemap_header_file(spawn_point_names, boundary_data, gateway_data, w
         hpp.write("#include \"globals.hpp\"\n")
         hpp.write("namespace " + config.NAMESPACE_COLON.lower() + "tilemaps::"+name_lower+" {\n")
 
-        if config.PARSE_ACTORS and spawn_point_names:
+        if config.PARSE_ACTORS:
             for name in spawn_point_names:
                 hpp.write("    extern const spawn_point_t spawn_point_"+name+";\n")
             hpp.write("    extern const spawn_point_t spawn_points["+str(len(spawn_point_names))+"];\n")
-        if config.PARSE_ACTORS and gateway_data:
+        if config.PARSE_ACTORS:
             number_of_points = [x['number_of_points'] for x in gateway_data]
             hpp.write("    extern const polygon_t gateways["+str(sum(number_of_points)*2)+"];\n")
             hpp.write("    extern const boundary_metadata_t gateway_metadata["+str(len(gateway_data))+"];\n")
-        if config.PARSE_BOUNDARIES and boundary_data:
+        if config.PARSE_BOUNDARIES:
             number_of_points = [x['number_of_points'] for x in boundary_data]
             hpp.write("    extern const polygon_t boundaries["+str(sum(number_of_points)*2)+"];\n")
             hpp.write("    extern const boundary_metadata_t boundary_metadata["+str(len(boundary_data))+"];\n")
@@ -77,17 +77,24 @@ def create_tilemap_data(bitmap, layers, width, height, bitmap_width, cpp):
         # since the GBA puts part of the map into different screenblocks depending
         # on the maps dimensions, we use this conditional to alter the map arithmetic
         screenblock_flip = bool(width == 64 and height in (32,64))
+        screenblock_flip = False
         screenblock_2nd_half = False
+        tilesize_factor = bitmap_width/8
         i,k = 0,0
 
         while i < width*height:
-            base_id = int((i-int(i/width)*width)/2)+(int(i/(width*2))*int(width/2))
+            base_id = int((i-int(i/width)*width)/tilesize_factor)+(int(i/(width*tilesize_factor))*int(width/tilesize_factor))
             x_offset = i % 2
             y_offset = int(i/width) % 2
 
             tile_id = tilemap[base_id]-1 if tilemap[base_id] != 0 else 0
             real_id = tile_id%bitmap_width*2 + int(tile_id/bitmap_width)*bitmap_width*2*2 + \
                      y_offset*bitmap_width*2 + x_offset
+            print(i)
+            print(bitmap_width)
+            print(base_id)
+            print(tile_id)
+            print(real_id)
             flip_offset = 0
             if bitmap[real_id]["h_flipped"]:
                 flip_offset += config.H_FLIP
@@ -256,7 +263,8 @@ def write_object_data(actors, boundaries, cpp):
             gateway_data.append(calculate_boundary_data(obj))
 
     for obj in boundaries.getElementsByTagName("object"):
-        boundary_data.append(calculate_boundary_data(obj))
+        if obj.getAttribute("type") == "boundary" or obj.getAttribute("class") == "boundary":
+            boundary_data.append(calculate_boundary_data(obj))
 
     write_boundary_data(gateway_data, "gateways", cpp)
     write_boundary_data(boundary_data, "boundaries", cpp)
@@ -327,7 +335,7 @@ def create_data_files(bitmap, layers, actors, boundaries, width, height, bitmap_
     spawn_point_names,boundary_data,gateway_data = create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, image_src)
     create_tilemap_header_file(spawn_point_names, boundary_data, gateway_data, width, height, image_src)
 
-def create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width):
+def create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width,tilesize):
     print("Generating map "+map_name+" with dimensions: "+str(map_width*2)+"x"+str(map_height*2))
     if not config.FORCE_MAP_DATA_GENERATION and \
        os.path.exists("include/" + map_name + ".hpp") and \
@@ -347,8 +355,8 @@ def create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,b
         layers = tilemap_xml.documentElement.getElementsByTagName("layer")
         create_data_files(
             bitmap, layers, actors, boundaries,
-            map_width*2, map_height*2,
-            int(tilemap_width*8/16),  # 16 = tilesize
+            map_width*(tilesize/8), map_height*(tilesize/8),
+            int(tilemap_width*8/tilesize),
             map_name
         )
 
@@ -459,8 +467,8 @@ if __name__ == "__main__":
     with open("graphics/ressources/maps.json") as maps_json:
         maps = json.load(maps_json)
         for tilemap in maps:
-            tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width = create_map(tilemap)
-            create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width)
+            tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width,tilesize = create_map(tilemap)
+            create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width,tilesize)
 
     if config.CREATE_GLOBALS_FILE:
         create_tilemap_globals_file()
