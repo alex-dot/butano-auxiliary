@@ -64,7 +64,7 @@ def parse_csv_tmx_map(tmx_map):
         clean_map.append(int(val))
     return clean_map
 
-def create_tilemap_data(bitmap, layers, width, height, bitmap_width, cpp):
+def create_tilemap_data(bitmap, layers, width, height, bitmap_width, tilesize_factor, cpp):
     cpp.write("    const tm_t<"+str(width)+","+str(height)+"> tilemap = {\n")
 
     for layer in layers:
@@ -74,34 +74,27 @@ def create_tilemap_data(bitmap, layers, width, height, bitmap_width, cpp):
 
         tilelist = "        "
 
-        # since the GBA puts part of the map into different screenblocks depending
+        # since the GBA/butano puts part of the map into different screenblocks depending
         # on the maps dimensions, we use this conditional to alter the map arithmetic
         screenblock_flip = bool(width == 64 and height in (32,64))
-        screenblock_flip = False
         screenblock_2nd_half = False
-        tilesize_factor = bitmap_width/8
         i,k = 0,0
 
         while i < width*height:
             base_id = int((i-int(i/width)*width)/tilesize_factor)+(int(i/(width*tilesize_factor))*int(width/tilesize_factor))
-            x_offset = i % 2
-            y_offset = int(i/width) % 2
+            x_offset = i % tilesize_factor
+            y_offset = int(i/width) % tilesize_factor
 
             tile_id = tilemap[base_id]-1 if tilemap[base_id] != 0 else 0
-            real_id = tile_id%bitmap_width*2 + int(tile_id/bitmap_width)*bitmap_width*2*2 + \
-                     y_offset*bitmap_width*2 + x_offset
-            print(i)
-            print(bitmap_width)
-            print(base_id)
-            print(tile_id)
-            print(real_id)
+            real_id = tile_id%bitmap_width*tilesize_factor + int(tile_id/bitmap_width)*bitmap_width*tilesize_factor*tilesize_factor + \
+                      y_offset*bitmap_width*tilesize_factor + x_offset
             flip_offset = 0
             if bitmap[real_id]["h_flipped"]:
                 flip_offset += config.H_FLIP
             if bitmap[real_id]["v_flipped"]:
                 flip_offset += config.V_FLIP
             if not bitmap[real_id]["unique"]:
-                real_id = bitmap[real_id]["relative"][1]*bitmap_width*2 + \
+                real_id = bitmap[real_id]["relative"][1]*bitmap_width*tilesize_factor + \
                          bitmap[real_id]["relative"][0]
             real_id -= bitmap[real_id]["non_unique_tile_count"]
             real_id += flip_offset
@@ -112,17 +105,17 @@ def create_tilemap_data(bitmap, layers, width, height, bitmap_width, cpp):
             if (i+1) % 16 == 0 and i > 0:
                 tilelist += "\n" + "        "
 
-            if screenblock_flip and k == int(width/2)-1:
-                i += int(width/2)
+            if screenblock_flip and k == int(width/tilesize_factor)-1:
+                i += int(width/tilesize_factor)
                 k = -1
             if screenblock_flip and not screenblock_2nd_half and i == width*32-1:
-                i = int(width/2)-1
+                i = int(width/tilesize_factor)-1
                 screenblock_2nd_half = True
-            if screenblock_flip and screenblock_2nd_half and i == width*32+int(width/2)-1:
+            if screenblock_flip and screenblock_2nd_half and i == width*32+int(width/tilesize_factor)-1:
                 i = width*32-1
                 screenblock_2nd_half = False
             if screenblock_flip and not screenblock_2nd_half and i == width*64-1:
-                i = width*32+int(width/2)-1
+                i = width*32+int(width/tilesize_factor)-1
                 screenblock_2nd_half = True
 
             i += 1
@@ -302,7 +295,7 @@ def write_object_data(actors, boundaries, cpp):
 
     return spawn_point_names,boundary_data,gateway_data
 
-def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, image_src):
+def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, tilesize, image_src):
     spawn_point_names,boundary_data,gateway_data = None,None,None
     name_upper = image_src.split(".")[0].upper()
     name_lower = image_src.split(".")[0].lower()
@@ -325,18 +318,18 @@ def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, b
         if (config.PARSE_ACTORS and actors) or (config.PARSE_BOUNDARIES and boundaries):
             spawn_point_names,boundary_data,gateway_data = write_object_data(actors, boundaries, cpp)
 
-        create_tilemap_data(bitmap, layers, width, height, bitmap_width, cpp)
+        create_tilemap_data(bitmap, layers, width, height, bitmap_width, tilesize, cpp)
 
         cpp.write("}\n")
 
     return spawn_point_names,boundary_data,gateway_data
 
-def create_data_files(bitmap, layers, actors, boundaries, width, height, bitmap_width, image_src):
-    spawn_point_names,boundary_data,gateway_data = create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, image_src)
+def create_data_files(bitmap, layers, actors, boundaries, width, height, bitmap_width, tilesize, image_src):
+    spawn_point_names,boundary_data,gateway_data = create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, tilesize, image_src)
     create_tilemap_header_file(spawn_point_names, boundary_data, gateway_data, width, height, image_src)
 
 def create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width,tilesize):
-    print("Generating map "+map_name+" with dimensions: "+str(map_width*2)+"x"+str(map_height*2))
+    print("Generating map "+map_name+" with dimensions: "+str(int(map_width*(tilesize/8)))+"x"+str(int(map_height*(tilesize/8))))
     if not config.FORCE_MAP_DATA_GENERATION and \
        os.path.exists("include/" + map_name + ".hpp") and \
        os.path.getctime("include/" + map_name + ".hpp") >= \
@@ -355,8 +348,9 @@ def create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,b
         layers = tilemap_xml.documentElement.getElementsByTagName("layer")
         create_data_files(
             bitmap, layers, actors, boundaries,
-            map_width*(tilesize/8), map_height*(tilesize/8),
-            int(tilemap_width*8/tilesize),
+            int(map_width*(tilesize/8)), int(map_height*(tilesize/8)),
+            int((tilemap_width*8)/tilesize),
+            int(tilesize/8), 
             map_name
         )
 
