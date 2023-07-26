@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 
-"""tilemap_minimizer.py: Generate minimized tilemaps and butano-compatible map headers from tiled 
-                         projects. This script assumes to be run from the root folder of a butano 
-                         project."""
+"""tilemap_compressor.py: Generate minimized tilemaps from tilemaps referenced in tiled projects. """
 
 import os
 import sys

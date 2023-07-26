@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 
-"""tilemap_minimizer.py: Generate minimized tilemaps and butano-compatible map headers from tiled 
-                         projects. This script assumes to be run from the root folder of a butano 
-                         project."""
+"""butano_auxiliary.py: Generate minimized tilemaps and butano-compatible map headers from tiled 
+                        projects. """
 
 import os
 import sys
@@ -14,14 +13,13 @@ from numpy import subtract
 from PIL import Image, ImageOps
 
 import config
-from tilemap_minimizer import *
+from tilemap_compressor import *
 from mapdata_generator import *
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(
         description="""
             Generate minimized tilemaps and butano-compatible map headers from tiled projects. 
-            This script assumes to be run from the root folder of a butano project.
             """)
     argparser.add_argument('-f','--force',dest='force',action='store_true',
                            help='Force all files generation')

@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 
-"""tilemap_minimizer.py: Generate minimized tilemaps and butano-compatible map headers from tiled 
-                         projects. This script assumes to be run from the root folder of a butano 
-                         project."""
+"""mapdata_generator.py: Generate butano-compatible map headers from tiled projects."""
 
 import os
 import sys
@@ -14,7 +12,7 @@ from numpy import subtract
 from PIL import Image, ImageOps
 
 import config
-from tilemap_minimizer import *
+from tilemap_compressor import *
 
 def create_tilemap_header_file(spawn_point_names, boundary_data, gateway_data, width, height, image_src):
     '''Creates a butano header file defining GBA compatible map data referencing the tilemap.'''
@@ -421,8 +419,7 @@ def create_tilemap_globals_file():
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(
         description="""
-            Generate minimized tilemaps and butano-compatible map headers from tiled projects. 
-            This script assumes to be run from the root folder of a butano project.
+            Generate butano-compatible map headers from tiled projects.
             """)
     argparser.add_argument('-f','--force',dest='force',action='store_true',
                            help='Force all files generation')
