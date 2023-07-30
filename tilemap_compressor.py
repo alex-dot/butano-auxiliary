@@ -12,6 +12,7 @@ from numpy import subtract
 from PIL import Image, ImageOps
 
 import config
+from tilemap_minimizer import *
 
 def pixel_compare(left, right):
     '''Does a pixel by pixel comparison of 8x8 tile. Returns True if all pixels are the same
@@ -33,6 +34,7 @@ def compare_tiles(tilemap, columns, rows):
         'v_flipped': False, 
         'non_unique_tile_count': 0 } for x in range(rows*columns) ]
 
+    use_list = []
     for y in range(rows):
         for x in range(columns):
             if not tilemap_bitmap[y*columns+x]['unique']:
@@ -149,16 +151,21 @@ def create_tilemap_palette(tilemap_min,image_file_name):
     return palette_list, palette_list_flat
 
 def create_compressed_tileset(image_src,image_file_name):
-    '''Creating minimized tilemap from a regular tilemap file by searching for duplicated
+    '''Creating compressed tilemap from a regular tilemap file by searching for duplicated
        tiles. Supports horizontal and vertical flipping.'''
-    tilemap_src = Image.open("graphics/ressources/" + image_src).convert('RGB')
+
+    if config.PREVENT_TILEMAP_MINIMIZATION:
+        tilemap_src = Image.open("graphics/ressources/" + image_src).convert('RGB')
+    else:
+        tilemap_src = Image.open("graphics/ressources/" + image_file_name + "_minimized.bmp").convert('RGB')
+
     columns = int( tilemap_src.width / 8 )
     rows = int( tilemap_src.height / 8 )
 
     tilemap_bitmap,unique_tile_count = compare_tiles(tilemap_src, columns, rows)
 
     if unique_tile_count <= 960:
-        print("Found "+str(unique_tile_count)+" unique tiles, generating minimized tilemap...")
+        print("Found "+str(unique_tile_count)+" unique tiles, generating compressed tilemap...")
     else:
         print("Too many unique tiles found: "+str(unique_tile_count))
         sys.exit()
@@ -197,7 +204,7 @@ def create_compressed_tileset(image_src,image_file_name):
     print("Minimized tilemap created, extracting palette...")
     palette_list, palette_list_flat = create_tilemap_palette(tilemap_min_rgb,image_file_name)
 
-    print("Palette extracted, applying to minimized tileset...")
+    print("Palette extracted, applying to compressed tileset...")
     tilemap_min_p = Image.new(
         'P',
         (tilemap_min_width, tilemap_min_height),
@@ -235,62 +242,56 @@ def create_compressed_tileset(image_src,image_file_name):
     print("Tileset created")
     return tilemap_bitmap, columns
 
-def create_map(tilemap_json):
+def get_bitmap(image_file_name):
+    with open("graphics/ressources/" + image_file_name + ".json",encoding='UTF-8')\
+      as cached_tilemap_json_file:
+        cached_tilemap_json = json.load(cached_tilemap_json_file)
+    bitmap = cached_tilemap_json["tilemap"]
+    tilemap_width = int(cached_tilemap_json["columns"])
+    return bitmap,tilemap_width
+
+def create_tilemap(image_file_name, image_src):
     '''Parses butano tilemap JSON file in graphics/ to extract tiled map location, then parses
-       tiled map file. Calls subsequent functions to minimize all referenced tilemaps and create
+       tiled map file. Calls subsequent functions to compress all referenced tilemaps and create
        butano header file containing map data. Expects "tmx" value in JSON file to point to tiled 
        map file.'''
-    map_name = tilemap_json["name"]
-    tilemap_tmx_path = "graphics/ressources/" + tilemap_json["tmx"]
-    tilemap_xml = xmlparse(tilemap_tmx_path)
-    tilemap_tmx = tilemap_xml.documentElement.getElementsByTagName("tileset")[0]\
-                                             .getAttribute("source")
-    tilemap_tsx = xmlparse("graphics/ressources/" + tilemap_tmx)
-    image_src = tilemap_tsx.documentElement.getElementsByTagName("image")[0]\
-                                           .getAttribute("source")
-    tilesize = int(tilemap_tsx.documentElement.getAttribute("tilewidth"))
-    image_file_name = image_src.split("/")[len(image_src.split("/"))-1]
-    image_file_name = image_file_name.split(".")[len(image_file_name.split("."))-2].lower()
-    map_width = int(tilemap_xml.documentElement.getAttribute("width"))
-    map_height = int(tilemap_xml.documentElement.getAttribute("height"))
-
     print("creating compressed tileset: " + image_file_name)
     bitmap, tilemap_width = "", ""
     if not config.FORCE_IMAGE_GENERATION and \
        os.path.exists("graphics/ressources/" + image_file_name + ".json") and \
        os.path.getctime("graphics/" + image_file_name + ".bmp") >= \
            os.path.getctime("graphics/ressources/" + image_src):
-        print("Source image not modified, skipping generation of new minified tileset")
-        tilemap_json = None
-        with open("graphics/ressources/" + image_file_name + ".json",encoding='UTF-8')\
-          as tilemap_json_file:
-            tilemap_json = json.load(tilemap_json_file)
-        bitmap = tilemap_json["tilemap"]
-        tilemap_width = int(tilemap_json["columns"])
+        print("Source image not modified, skipping generation of new compressed tileset")
+        bitmap,tilemap_width = get_bitmap(image_file_name)
     else:
-        bitmap, tilemap_width = create_compressed_tileset(image_src,image_file_name)
+        bitmap,tilemap_width = create_compressed_tileset(image_src,image_file_name)
 
-    return tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width,tilesize
+    return bitmap,tilemap_width
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(
         description="""
-            Generate minimized tilemaps from referenced tilemaps in tiled projects.
+            Generate compressed tilemaps from referenced tilemaps in tiled projects.
             """)
     argparser.add_argument('-f','--force',dest='force',action='store_true',
                            help='Force all files generation')
     argparser.add_argument('--force-image-gen',dest='force_img',action='store_true',
                            help='Force tilemap image generation')
+    argparser.add_argument('--no-mnimization',dest='prevent_minimization',action='store_true',
+                           help='Do not minimize tilemap before compression')
     args = argparser.parse_args()
 
     if args.force:
         config.FORCE_IMAGE_GENERATION = True
     if args.force_img:
         config.FORCE_IMAGE_GENERATION = True
+    if args.prevent_minimization:
+        config.PREVENT_TILEMAP_MINIMIZATION = True
 
     with open("graphics/ressources/maps.json") as maps_json:
         maps = json.load(maps_json)
         for tilemap in maps:
-            create_map(tilemap)
+            tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,tilesize,image_file_name,image_src,used_tiles = open_map(tilemap)
+            create_tilemap(image_file_name,image_src)
 
     print("Finished")

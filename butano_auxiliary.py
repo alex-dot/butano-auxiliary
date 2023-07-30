@@ -15,6 +15,7 @@ from PIL import Image, ImageOps
 import config
 from tilemap_compressor import *
 from mapdata_generator import *
+from tilemap_minimizer import *
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(
@@ -27,6 +28,8 @@ if __name__ == "__main__":
                            help='Force tilemap image generation')
     argparser.add_argument('--force-map-gen',dest='force_map',action='store_true',
                            help='Force tilemap data generation')
+    argparser.add_argument('--no-mnimization',dest='prevent_minimization',action='store_true',
+                           help='Do not minimize tilemap before compression')
     argparser.add_argument('-n','--namespace',dest='namespace',
                            help='Set namespace for project')
     argparser.add_argument('-o','--create-objects',dest='objects',action='store_true',
@@ -44,6 +47,8 @@ if __name__ == "__main__":
         config.FORCE_MAP_DATA_GENERATION = True
     if args.force_img:
         config.FORCE_IMAGE_GENERATION = True
+    if args.prevent_minimization:
+        config.PREVENT_TILEMAP_MINIMIZATION = True
     if args.force_map:
         config.FORCE_MAP_DATA_GENERATION = True
     if args.namespace:
@@ -62,9 +67,19 @@ if __name__ == "__main__":
 
     with open("graphics/ressources/maps.json") as maps_json:
         maps = json.load(maps_json)
-        for tilemap in maps:
-            tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width,tilesize = create_map(tilemap)
-            create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,bitmap,tilemap_width,tilesize)
+        if not config.PREVENT_TILEMAP_MINIMIZATION:
+            used_tiles = get_used_tiles(maps)
+            for ut in used_tiles:
+                create_tilemap(ut["image_file_name"],ut["image_src"])
+            for tilemap in maps:
+                tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,tilesize,image_file_name,image_src = open_map(tilemap)
+                bitmap,tilemap_width = get_bitmap(image_file_name)
+                create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,image_file_name,tilesize,used_tiles,bitmap,tilemap_width)
+        else:
+            for tilemap in maps:
+                tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,tilesize,image_file_name,image_src = open_map(tilemap)
+                bitmap,tilemap_width = create_tilemap(image_file_name,image_src)
+                create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,image_file_name,tilesize,used_tiles,bitmap,tilemap_width)
 
     if config.CREATE_GLOBALS_FILE:
         create_tilemap_globals_file()
