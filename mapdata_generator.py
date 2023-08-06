@@ -86,8 +86,10 @@ def create_tilemap_data(bitmap, layers, width, height, bitmap_width, tilesize_fa
 
             tile_id = tilemap[base_id]-1 if tilemap[base_id] != 0 else 0
     
+            print(used_tiles)
+            print(image_file_name)
             if not config.PREVENT_TILEMAP_MINIMIZATION:
-                tilemap_used_tiles = [utm for utm in used_tiles if utm["tilemap"] == image_file_name][0]
+                tilemap_used_tiles = [utm for utm in used_tiles if utm["image_file_name"] == image_file_name][0]
                 tile_id = tilemap_used_tiles["used_tiles"].index(tile_id)
     
             real_id = tile_id%bitmap_width*tilesize_factor + int(tile_id/bitmap_width)*bitmap_width*tilesize_factor*tilesize_factor + \
@@ -314,7 +316,8 @@ def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, b
 
         # TODO requires proper handling
         cpp.write("namespace " + config.NAMESPACE_COLON.lower() + "actors::"+name_lower+" {\n")
-        write_actor_data(actors,cpp)
+        if (config.PARSE_ACTORS and actors):
+            write_actor_data(actors,cpp)
         cpp.write("}\n\n")
 
         cpp.write("namespace " + config.NAMESPACE_COLON.lower() + "tilemaps::"+name_lower+" {\n")
@@ -332,32 +335,36 @@ def create_data_files(bitmap, layers, actors, boundaries, width, height, bitmap_
     spawn_point_names,boundary_data,gateway_data = create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, image_file_name, tilesize, used_tiles, image_src)
     create_tilemap_header_file(spawn_point_names, boundary_data, gateway_data, width, height, image_src)
 
-def create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,image_file_name,tilesize,used_tiles,bitmap,tilemap_width):
-    print("Generating map "+map_name+" with dimensions: "+str(int(map_width*(tilesize/8)))+"x"+str(int(map_height*(tilesize/8))))
+def create_map_data(mapdict,bitmap,tilemap_width):
+    print("Generating map "+mapdict['map_name']+" with dimensions: "+\
+      str(int(mapdict['map_width']*(mapdict['images'][0]['tilesize']/8)))+"x"+\
+      str(int(mapdict['map_height']*(mapdict['images'][0]['tilesize']/8)))
+    )
     if not config.FORCE_MAP_DATA_GENERATION and \
-       os.path.exists("include/" + map_name + ".hpp") and \
-       os.path.getctime("include/" + map_name + ".hpp") >= \
-           os.path.getctime(tilemap_tmx_path) and \
-       os.path.exists("src/" + map_name + ".cpp") and \
-       os.path.getctime("src/" + map_name + ".cpp") >= \
-           os.path.getctime(tilemap_tmx_path):
+       os.path.exists("include/" + mapdict['map_name'] + ".hpp") and \
+       os.path.getctime("include/" + mapdict['map_name'] + ".hpp") >= \
+           os.path.getctime(mapdict['tilemap_tmx_path']) and \
+       os.path.exists("src/" + mapdict['map_name'] + ".cpp") and \
+       os.path.getctime("src/" + mapdict['map_name'] + ".cpp") >= \
+           os.path.getctime(mapdict['tilemap_tmx_path']):
         print("Source tiled map not modified, skipping generation of new data files")
     else:
         actors,boundaries = None,None
-        for object_group in tilemap_xml.documentElement.getElementsByTagName("objectgroup"):
+        for object_group in mapdict['tilemap_xml'].documentElement.getElementsByTagName("objectgroup"):
             if config.PARSE_ACTORS and object_group.getAttribute("name") == "actors":
                 actors = object_group
             if config.PARSE_BOUNDARIES and object_group.getAttribute("name") == "boundaries":
                 boundaries = object_group
-        layers = tilemap_xml.documentElement.getElementsByTagName("layer")
+        layers = mapdict['tilemap_xml'].documentElement.getElementsByTagName("layer")
         create_data_files(
             bitmap, layers, actors, boundaries,
-            int(map_width*(tilesize/8)), int(map_height*(tilesize/8)),
-            int((tilemap_width*8)/tilesize),
-            int(tilesize/8), 
-            image_file_name,
-            used_tiles, 
-            map_name
+            int(mapdict['map_width']*(mapdict['images'][0]['tilesize']/8)),
+            int(mapdict['map_height']*(mapdict['images'][0]['tilesize']/8)),
+            int((tilemap_width*8)/mapdict['images'][0]['tilesize']),
+            int(mapdict['images'][0]['tilesize']/8), 
+            mapdict['map_name'],
+            mapdict['images'],
+            mapdict['map_name']
         )
 
     return
@@ -433,6 +440,10 @@ if __name__ == "__main__":
                            help='Force all files generation')
     argparser.add_argument('--force-map-gen',dest='force_map',action='store_true',
                            help='Force tilemap data generation')
+    argparser.add_argument('--map-file',dest='tmx_override',
+                           help='Specifiy tiled TMX map, ignoring maps.json; requires --map-name')
+    argparser.add_argument('--map-name',dest='map_name',
+                           help='Specifiy map name, ignoring maps.json; requires --map-file')
     argparser.add_argument('--no-mnimization',dest='prevent_minimization',action='store_true',
                            help='Do not minimize tilemap before compression')
     argparser.add_argument('-n','--namespace',dest='namespace',
@@ -451,6 +462,17 @@ if __name__ == "__main__":
         config.FORCE_MAP_DATA_GENERATION = True
     if args.force_map:
         config.FORCE_MAP_DATA_GENERATION = True
+    if ( args.tmx_override and not args.map_name ) or \
+       ( not args.tmx_override and args.map_name ):
+        print("If either --map-file or --map-name is set, the other must be set, too")
+        sys.exit()
+    if args.tmx_override:
+        config.TMX_OVERRIDE = args.tmx_override.split('/')[-1]
+        if not os.path.exists("graphics/ressources/" + config.TMX_OVERRIDE):
+            print("Did not find a tiled map file: "+config.TMX_OVERRIDE)
+            sys.exit()
+    if args.map_name:
+        config.MAP_NAME = args.map_name
     if args.prevent_minimization:
         config.PREVENT_TILEMAP_MINIMIZATION = True
     if args.namespace:
@@ -468,20 +490,20 @@ if __name__ == "__main__":
         config.CREATE_GLOBALS_FILE = True
 
     with open("graphics/ressources/maps.json") as maps_json:
-        maps = json.load(maps_json)
+        if config.TMX_OVERRIDE and config.MAP_NAME:
+            maps = json.loads('[{"name":"'+config.MAP_NAME+'","tmx":"'+config.TMX_OVERRIDE+'"}]')
+        else:
+            maps = json.load(maps_json)
         if not config.PREVENT_TILEMAP_MINIMIZATION:
-            used_tiles = get_used_tiles(maps)
-            for ut in used_tiles:
-                create_tilemap(ut["image_file_name"],ut["image_src"])
-            for tilemap in maps:
-                tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,tilesize,image_file_name,image_src = open_map(tilemap)
-                bitmap,tilemap_width = get_bitmap(image_file_name)
-                create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,image_file_name,tilesize,used_tiles,bitmap,tilemap_width)
+            map_data = get_used_tiles(maps)
+            for mapdict in map_data:
+                bitmap,tilemap_width = create_tilemap(mapdict)
+                create_map_data(mapdict,bitmap,tilemap_width)
         else:
             for tilemap in maps:
-                tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,tilesize,image_file_name,image_src = open_map(tilemap)
-                bitmap,tilemap_width = create_tilemap(image_file_name,image_src)
-                create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,image_file_name,tilesize,used_tiles,bitmap,tilemap_width)
+                map_data = open_map(tilemap)
+                bitmap,tilemap_width = create_tilemap(map_data[0])
+                create_map_data(map_data[0],bitmap,tilemap_width)
 
 
     if config.CREATE_GLOBALS_FILE:
