@@ -22,8 +22,14 @@ def create_tilemap_header_file(spawn_point_names, boundary_data, gateway_data, w
         name_lower = image_src.split(".")[0].lower()
         hpp.write("#ifndef " + config.NAMESPACE_UNDERSCORE.upper() + name_upper + "_HPP\n")
         hpp.write("#define " + config.NAMESPACE_UNDERSCORE.upper() + name_upper + "_HPP\n\n")
+        hpp.write("#include \"bn_regular_bg_tiles_item.h\"\n")
+        hpp.write("#include \"bn_bg_palette_item.h\"\n\n")
         hpp.write("#include \"globals.hpp\"\n")
         hpp.write("namespace " + config.NAMESPACE_COLON.lower() + "tilemaps::"+name_lower+" {\n")
+
+        hpp.write("    extern const bn::regular_bg_tiles_item* bg_tiles;\n")
+        hpp.write("    extern const bn::bg_palette_item*       bg_palette;\n")
+        hpp.write("    extern const tm_t<"+str(width)+","+str(height)+"> tilemap;\n")
 
         if config.PARSE_ACTORS:
             for name in spawn_point_names:
@@ -40,7 +46,6 @@ def create_tilemap_header_file(spawn_point_names, boundary_data, gateway_data, w
         if config.PARSE_ACTORS or config.PARSE_BOUNDARIES:
             hpp.write("    extern const metadata_t metadata;\n")
 
-        hpp.write("    extern const tm_t<"+str(width)+","+str(height)+"> tilemap;\n")
         hpp.write("\n}\n\n")
 
         hpp.write("namespace " + config.NAMESPACE_COLON.lower() + "texts::"+name_lower+" {\n")
@@ -63,7 +68,7 @@ def parse_csv_tmx_map(tmx_map):
         clean_map.append(int(val))
     return clean_map
 
-def create_tilemap_data(bitmap, layers, width, height, bitmap_width, tilesize_factor, image_file_name, used_tiles, cpp):
+def create_tilemap_data(bitmap, layers, width, height, bitmap_width, tilesize_factor, image_file_name, images, cpp):
     cpp.write("    const tm_t<"+str(width)+","+str(height)+"> tilemap = {\n")
 
     for layer in layers:
@@ -84,17 +89,19 @@ def create_tilemap_data(bitmap, layers, width, height, bitmap_width, tilesize_fa
             x_offset = i % tilesize_factor
             y_offset = int(i/width) % tilesize_factor
 
-            tile_id = tilemap[base_id]-1 if tilemap[base_id] != 0 else 0
-    
-            print(used_tiles)
-            print(image_file_name)
+            tile_id = tilemap[base_id]
             if not config.PREVENT_TILEMAP_MINIMIZATION:
-                tilemap_used_tiles = [utm for utm in used_tiles if utm["image_file_name"] == image_file_name][0]
-                tile_id = tilemap_used_tiles["used_tiles"].index(tile_id)
-    
+                for img in images:
+                    tile_id_temp = tile_id - img["first_gid"]
+                    if tile_id_temp in img["used_tiles"]:
+                        tile_id = img["used_tiles"].index(tile_id_temp)
+            else:
+                tile_id = tilemap[base_id]-1 if tilemap[base_id] != 0 else 0
+
             real_id = tile_id%bitmap_width*tilesize_factor + int(tile_id/bitmap_width)*bitmap_width*tilesize_factor*tilesize_factor + \
                       y_offset*bitmap_width*tilesize_factor + x_offset
             flip_offset = 0
+
             if bitmap[real_id]["h_flipped"]:
                 flip_offset += config.H_FLIP
             if bitmap[real_id]["v_flipped"]:
@@ -309,6 +316,9 @@ def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, b
     with open("src/" + name_lower + ".cpp","w",encoding='UTF-8') as cpp:
         cpp.write("#include \""+name_lower+".hpp\"\n\n")
 
+        cpp.write("#include \"bn_regular_bg_tiles_items_"+name_lower+".h\"\n")
+        cpp.write("#include \"bn_bg_palette_items_"+name_lower+"_palette.h\"\n\n")
+
         # TODO requires proper handling
         cpp.write("namespace " + config.NAMESPACE_COLON.lower() + "texts::"+name_lower+" {\n")
         cpp.write("    const text_t text = \"Crono received 1 potion.\";\n")
@@ -322,10 +332,13 @@ def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, b
 
         cpp.write("namespace " + config.NAMESPACE_COLON.lower() + "tilemaps::"+name_lower+" {\n")
 
-        if (config.PARSE_ACTORS and actors) or (config.PARSE_BOUNDARIES and boundaries):
-            spawn_point_names,boundary_data,gateway_data = write_object_data(actors, boundaries, cpp)
+        cpp.write("    const bn::regular_bg_tiles_item* bg_tiles   = &bn::regular_bg_tiles_items::"+name_lower+";\n")
+        cpp.write("    const bn::bg_palette_item*       bg_palette = &bn::bg_palette_items::"+name_lower+"_palette;\n")
 
         create_tilemap_data(bitmap, layers, width, height, bitmap_width, image_file_name, tilesize, used_tiles, cpp)
+
+        if (config.PARSE_ACTORS and actors) or (config.PARSE_BOUNDARIES and boundaries):
+            spawn_point_names,boundary_data,gateway_data = write_object_data(actors, boundaries, cpp)
 
         cpp.write("}\n")
 
@@ -444,7 +457,7 @@ if __name__ == "__main__":
                            help='Specifiy tiled TMX map, ignoring maps.json; requires --map-name')
     argparser.add_argument('--map-name',dest='map_name',
                            help='Specifiy map name, ignoring maps.json; requires --map-file')
-    argparser.add_argument('--no-mnimization',dest='prevent_minimization',action='store_true',
+    argparser.add_argument('--no-minimization',dest='prevent_minimization',action='store_true',
                            help='Do not minimize tilemap before compression')
     argparser.add_argument('-n','--namespace',dest='namespace',
                            help='Set namespace for project')

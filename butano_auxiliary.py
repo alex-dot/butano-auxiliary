@@ -28,7 +28,11 @@ if __name__ == "__main__":
                            help='Force tilemap image generation')
     argparser.add_argument('--force-map-gen',dest='force_map',action='store_true',
                            help='Force tilemap data generation')
-    argparser.add_argument('--no-mnimization',dest='prevent_minimization',action='store_true',
+    argparser.add_argument('--map-file',dest='tmx_override',
+                           help='Specifiy tiled TMX map, ignoring maps.json; requires --map-name')
+    argparser.add_argument('--map-name',dest='map_name',
+                           help='Specifiy map name, ignoring maps.json; requires --map-file')
+    argparser.add_argument('--no-minimization',dest='prevent_minimization',action='store_true',
                            help='Do not minimize tilemap before compression')
     argparser.add_argument('-n','--namespace',dest='namespace',
                            help='Set namespace for project')
@@ -47,6 +51,17 @@ if __name__ == "__main__":
         config.FORCE_MAP_DATA_GENERATION = True
     if args.force_img:
         config.FORCE_IMAGE_GENERATION = True
+    if ( args.tmx_override and not args.map_name ) or \
+       ( not args.tmx_override and args.map_name ):
+        print("If either --map-file or --map-name is set, the other must be set, too")
+        sys.exit()
+    if args.tmx_override:
+        config.TMX_OVERRIDE = args.tmx_override.split('/')[-1]
+        if not os.path.exists("graphics/ressources/" + config.TMX_OVERRIDE):
+            print("Did not find a tiled map file: "+config.TMX_OVERRIDE)
+            sys.exit()
+    if args.map_name:
+        config.MAP_NAME = args.map_name
     if args.prevent_minimization:
         config.PREVENT_TILEMAP_MINIMIZATION = True
     if args.force_map:
@@ -66,20 +81,20 @@ if __name__ == "__main__":
         config.CREATE_GLOBALS_FILE = True
 
     with open("graphics/ressources/maps.json") as maps_json:
-        maps = json.load(maps_json)
+        if config.TMX_OVERRIDE and config.MAP_NAME:
+            maps = json.loads('[{"name":"'+config.MAP_NAME+'","tmx":"'+config.TMX_OVERRIDE+'"}]')
+        else:
+            maps = json.load(maps_json)
         if not config.PREVENT_TILEMAP_MINIMIZATION:
-            used_tiles = get_used_tiles(maps)
-            for ut in used_tiles:
-                create_tilemap(ut["image_file_name"],ut["image_src"])
-            for tilemap in maps:
-                tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,tilesize,image_file_name,image_src = open_map(tilemap)
-                bitmap,tilemap_width = get_bitmap(image_file_name)
-                create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,image_file_name,tilesize,used_tiles,bitmap,tilemap_width)
+            map_data = get_used_tiles(maps)
+            for mapdict in map_data:
+                bitmap,tilemap_width = create_tilemap(mapdict)
+                create_map_data(mapdict,bitmap,tilemap_width)
         else:
             for tilemap in maps:
-                tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,tilesize,image_file_name,image_src = open_map(tilemap)
-                bitmap,tilemap_width = create_tilemap(image_file_name,image_src)
-                create_map_data(tilemap_xml,tilemap_tmx_path,map_name,map_width,map_height,image_file_name,tilesize,used_tiles,bitmap,tilemap_width)
+                map_data = open_map(tilemap)
+                bitmap,tilemap_width = create_tilemap(map_data[0])
+                create_map_data(map_data[0],bitmap,tilemap_width)
 
     if config.CREATE_GLOBALS_FILE:
         create_tilemap_globals_file()

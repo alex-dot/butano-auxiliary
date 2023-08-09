@@ -280,7 +280,7 @@ if __name__ == "__main__":
                            help='Force all files generation')
     argparser.add_argument('--force-image-gen',dest='force_img',action='store_true',
                            help='Force tilemap image generation')
-    argparser.add_argument('--no-mimization',dest='prevent_minimization',action='store_true',
+    argparser.add_argument('--no-minimization',dest='prevent_minimization',action='store_true',
                            help='Do not minimize tilemap before compression')
     argparser.add_argument('--map-file',dest='tmx_override',
                            help='Specifiy tiled TMX map, ignoring maps.json; requires --map-name')

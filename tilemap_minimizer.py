@@ -67,14 +67,15 @@ def find_used_tiles(tilemap_xml, image_file_name, image_src, tilesize, used_tile
 
     return used_tiles
 
-def find_new_used_tiles(tilemap_xml, image_file_name, image_src, tilesize, used_tiles):
+def find_new_used_tiles(tilemap_xml, image_file_name, image_src, tilesize, first_gid, last_gid, used_tiles):
     img_used_tiles = []
     for layer in tilemap_xml.documentElement.getElementsByTagName("layer"):
         data = layer.getElementsByTagName("data")[0].firstChild.nodeValue
         for value in data.split(","):
             if value not in ("\n",""):
-                tid = int(value)-1 if int(value) != 0 else 0
-                img_used_tiles.append(tid)
+                if int(value) >= first_gid and int(value) < last_gid:
+                    tid = int(value)-first_gid if int(value) != 0 else 0
+                    img_used_tiles.append(tid)
     img_used_tiles = list(set(img_used_tiles))
     img_used_tiles.sort()
     return img_used_tiles
@@ -83,7 +84,7 @@ def create_minimized_tileset(mapdict):
     tile_count = 0
     for img in mapdict['images']:
         tilesize_factor = int(img['tilesize']/8)
-        tile_count += len(img['used_tiles'])*tilesize_factor
+        tile_count += len(img['used_tiles'])*tilesize_factor*tilesize_factor
     height,width = 128,128
     if tile_count >= 256:
         height = 256
@@ -99,13 +100,13 @@ def create_minimized_tileset(mapdict):
 
     tilemap_min = Image.new(
         'RGB',
-        (height, width),
+        (width, height),
         (255,0,255)
     )
 
+    i,j = 0,1
     for img in mapdict['images']:
         tilemap_src = Image.open("graphics/ressources/" + img['image_src']).convert('RGB')
-        i,j = 0,0
         for tid in img['used_tiles']:
             x = tid % int( tilemap_src.width / img['tilesize'] )
             y = int(tid / int( tilemap_src.width / img['tilesize'] ))
@@ -114,7 +115,7 @@ def create_minimized_tileset(mapdict):
             region = (j*img['tilesize'],i*img['tilesize'],(j+1)*img['tilesize'],(i+1)*img['tilesize'])
             tilemap_min.paste(tile, region)
             j += 1
-            if j >= tilemap_src.width/img['tilesize']:
+            if j >= width/img['tilesize']:
                 i += 1
                 j = 0
 
@@ -175,9 +176,18 @@ def open_map(tilemap_json, map_data = []):
         else:
             map_index = -1
 
+    tsx_list = []
     for tsx in tilemap_xml.documentElement.getElementsByTagName("tileset"):
-        tilemap_tsx_path = tsx.getAttribute("source")
-        tilemap_tsx = xmlparse("graphics/ressources/" + tilemap_tsx_path)
+        if len(tsx_list) > 0:
+            tsx_list[len(tsx_list)-1]["last_gid"] = int(tsx.getAttribute("firstgid")) - 1
+        tsx_list.append({
+            "path": tsx.getAttribute("source"),
+            "first_gid": int(tsx.getAttribute("firstgid")),
+            "last_gid": 99999999999
+        })
+
+    for tsx in tsx_list:
+        tilemap_tsx = xmlparse("graphics/ressources/" + tsx['path'])
         image_src = tilemap_tsx.documentElement.getElementsByTagName("image")[0]\
                                                .getAttribute("source")
         tilesize = int(tilemap_tsx.documentElement.getAttribute("tilewidth"))
@@ -191,14 +201,18 @@ def open_map(tilemap_json, map_data = []):
                 'image_file_name': image_file_name,
                 'image_src': image_src,
                 'tilesize': tilesize,
-                'used_tiles': find_new_used_tiles(tilemap_xml, image_file_name, image_src, tilesize, map_images[index])
+                'first_gid': tsx["first_gid"],
+                'last_gid': tsx["last_gid"],
+                'used_tiles': find_new_used_tiles(tilemap_xml, image_file_name, image_src, tilesize, tsx["first_gid"], tsx["last_gid"], map_images[index])
             }
         else:
             imgdict = {
                 'image_file_name': image_file_name,
                 'image_src': image_src,
                 'tilesize': tilesize,
-                'used_tiles': find_new_used_tiles(tilemap_xml, image_file_name, image_src, tilesize, [])
+                'first_gid': tsx["first_gid"],
+                'last_gid': tsx["last_gid"],
+                'used_tiles': find_new_used_tiles(tilemap_xml, image_file_name, image_src, tilesize, tsx["first_gid"], tsx["last_gid"], [])
             }
         mapdict['images'].append(imgdict)
 
