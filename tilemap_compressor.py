@@ -153,11 +153,10 @@ def create_tilemap_palette(tilemap_min,image_file_name):
 def create_compressed_tileset(mapdict):
     '''Creating compressed tilemap from a regular tilemap file by searching for duplicated
        tiles. Supports horizontal and vertical flipping.'''
-
-    if config.PREVENT_TILEMAP_MINIMIZATION:
-        tilemap_src = Image.open("graphics/ressources/" + mapdict['images'][0]['image_src']).convert('RGB')
+    if config.PREVENT_TILEMAP_MINIMIZATION and len(mapdict['images']) == 1:
+        tilemap_src = Image.open("graphics/ressources/" + next(iter(mapdict['images'].values()))['image_src']).convert('RGB')
     else:
-        tilemap_src = Image.open("graphics/ressources/" + mapdict['map_name'] + "_minimized.bmp").convert('RGB')
+        tilemap_src = mapdict['tilemap']
 
     columns = int( tilemap_src.width / 8 )
     rows = int( tilemap_src.height / 8 )
@@ -167,8 +166,7 @@ def create_compressed_tileset(mapdict):
     if unique_tile_count <= 960:
         print("Found "+str(unique_tile_count)+" unique tiles, generating compressed tilemap...")
     else:
-        print("Too many unique tiles found: "+str(unique_tile_count))
-        sys.exit()
+        raise OverflowError("Too many unique tiles found: "+str(unique_tile_count))
 
     if unique_tile_count <= 256:
         tilemap_min_width, tilemap_min_height = 128,128
@@ -236,7 +234,7 @@ def create_compressed_tileset(mapdict):
     print("Palette applied, storing meta information in ressource folder...")
     with open("graphics/ressources/" + mapdict['map_name'] + ".json","w",encoding='UTF-8')\
       as json_output:
-        output = {'columns':columns,'tilemap':tilemap_bitmap}
+        output = {'columns':columns,'minimized':not config.PREVENT_TILEMAP_MINIMIZATION,'tilemap':tilemap_bitmap}
         json.dump(output, json_output)
 
     print("Tileset created")
@@ -248,9 +246,9 @@ def get_bitmap(map_name):
         cached_tilemap_json = json.load(cached_tilemap_json_file)
     bitmap = cached_tilemap_json["tilemap"]
     tilemap_width = int(cached_tilemap_json["columns"])
-    return bitmap,tilemap_width
+    return bitmap,tilemap_width,bool(config.PREVENT_TILEMAP_MINIMIZATION and cached_tilemap_json["minimized"])
 
-def create_tilemap(mapdict):
+def create_tilemap(mapdict, combined_map=False):
     '''Parses butano tilemap JSON file in graphics/ to extract tiled map location, then parses
        tiled map file. Calls subsequent functions to compress all referenced tilemaps and create
        butano header file containing map data. Expects "tmx" value in JSON file to point to tiled 
@@ -259,17 +257,29 @@ def create_tilemap(mapdict):
     bitmap, tilemap_width = "", ""
     latest_image_change_date = -1
     for img in mapdict['images']:
-        if os.path.getctime("graphics/ressources/" + img['image_src']) > latest_image_change_date:
-            latest_image_change_date = os.path.getctime("graphics/ressources/" + img['image_src'])
+        if os.path.getctime("graphics/ressources/" + mapdict["images"][img]['image_src']) > latest_image_change_date:
+            latest_image_change_date = os.path.getctime("graphics/ressources/" + mapdict["images"][img]['image_src'])
+
+    generate_image = True
     if not config.FORCE_IMAGE_GENERATION and \
        os.path.exists("graphics/ressources/" + mapdict['map_name'] + ".json") and \
        os.path.getctime("graphics/" + mapdict['map_name'] + ".bmp") >= latest_image_change_date:
-        print("Source image not modified, skipping generation of new compressed tileset")
-        bitmap,tilemap_width = get_bitmap(mapdict['map_name'])
-    else:
-        bitmap,tilemap_width = create_compressed_tileset(mapdict)
+        bitmap,tilemap_width,generate_image = get_bitmap(mapdict['map_name'])
 
-    return bitmap,tilemap_width
+    if generate_image:
+        try:
+            bitmap,tilemap_width = create_compressed_tileset(mapdict)
+        except OverflowError as e:
+            if combined_map:
+                print("Too many unique tiles found but ignoring this since "+mapdict["map_name"]+" is a consolidated tilemap")
+                return None,None,False
+            else:
+                raise e
+    else:
+        print("Source image not modified, skipping generation of new compressed tileset")
+
+
+    return bitmap,tilemap_width,True
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(
@@ -280,18 +290,24 @@ if __name__ == "__main__":
                            help='Force all files generation')
     argparser.add_argument('--force-image-gen',dest='force_img',action='store_true',
                            help='Force tilemap image generation')
-    argparser.add_argument('--no-minimization',dest='prevent_minimization',action='store_true',
-                           help='Do not minimize tilemap before compression')
+    argparser.add_argument('-s','--save-temp-files',dest='save_temp_imgs',action='store_true',
+                           help='Save temporary files (like *_minimized.bmp and *_combined.bmp and some json files)')
     argparser.add_argument('--map-file',dest='tmx_override',
                            help='Specifiy tiled TMX map, ignoring maps.json; requires --map-name')
     argparser.add_argument('--map-name',dest='map_name',
                            help='Specifiy map name, ignoring maps.json; requires --map-file')
+    argparser.add_argument('--no-minimization',dest='prevent_minimization',action='store_true',
+                           help='Do not minimize tilemap before compression')
+    argparser.add_argument('--no-map-consolidation',dest='prevent_consolidation',action='store_true',
+                           help='Prevent consolidation of maps so each map will have their own generated tilemap')
     args = argparser.parse_args()
 
     if args.force:
         config.FORCE_IMAGE_GENERATION = True
     if args.force_img:
         config.FORCE_IMAGE_GENERATION = True
+    if args.save_temp_imgs:
+        config.SAVE_TEMPORARY_IMAGES = True
     if ( args.tmx_override and not args.map_name ) or \
        ( not args.tmx_override and args.map_name ):
         print("If either --map-file or --map-name is set, the other must be set, too")
@@ -305,21 +321,28 @@ if __name__ == "__main__":
         config.MAP_NAME = args.map_name
     if args.prevent_minimization:
         config.PREVENT_TILEMAP_MINIMIZATION = True
+    if args.prevent_consolidation:
+        config.PREVENT_MAP_CONSOLIDATION = True
 
     with open("graphics/ressources/maps.json") as maps_json:
         if config.TMX_OVERRIDE and config.MAP_NAME:
             maps = json.loads('[{"name":"'+config.MAP_NAME+'","tmx":"'+config.TMX_OVERRIDE+'"}]')
         else:
             maps = json.load(maps_json)
-        if not config.PREVENT_TILEMAP_MINIMIZATION:
-            map_data = get_used_tiles(maps)
-            for mapdict in map_data:
-                create_tilemap(mapdict)
-        else:
-            for tilemap in maps:
-                map_data = open_map(tilemap)
-                create_tilemap(map_data[0])
 
+        map_data = get_map_data(maps)
+        if not config.PREVENT_MAP_CONSOLIDATION:
+            for map_name in map_data["combined_maps"]:
+                bitmap,tilemap_width,success = create_tilemap(map_data["combined_maps"][map_name],True)
+                if success:
+                    for combined_map in map_data["combined_maps"][map_name]["maps"]:
+                        map_data["maps"][combined_map]["combined_tilemap"] = {"mapdict":map_data["combined_maps"][map_name],"bitmap":bitmap}
+
+        for map_name in map_data["maps"]:
+            if config.PREVENT_MAP_CONSOLIDATION or not map_data["maps"][map_name]["combined_tilemap"]:
+                create_tilemap(map_data["maps"][map_name])
+            else:
+                print("Skipping generation of tileset \""+map_name+"\" since it is included in: "+map_data["maps"][map_name]["combined_tilemap"]["mapdict"]["map_name"])
 
 
     print("Finished")

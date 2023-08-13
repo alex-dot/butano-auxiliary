@@ -68,7 +68,7 @@ def parse_csv_tmx_map(tmx_map):
         clean_map.append(int(val))
     return clean_map
 
-def create_tilemap_data(bitmap, layers, width, height, bitmap_width, tilesize_factor, image_file_name, images, cpp):
+def create_tilemap_data(bitmap, map_name, layers, width, height, bitmap_width, tilesize_factor, image_file_name, images, cpp):
     cpp.write("    const tm_t<"+str(width)+","+str(height)+"> tilemap = {\n")
 
     for layer in layers:
@@ -92,9 +92,10 @@ def create_tilemap_data(bitmap, layers, width, height, bitmap_width, tilesize_fa
             tile_id = tilemap[base_id]
             if not config.PREVENT_TILEMAP_MINIMIZATION:
                 for img in images:
-                    tile_id_temp = tile_id - img["first_gid"]
-                    if tile_id_temp in img["used_tiles"]:
-                        tile_id = img["used_tiles"].index(tile_id_temp)
+                    if map_name in images[img]["first_gid"] and \
+                      tile_id >= images[img]["first_gid"][map_name] and \
+                      tile_id < images[img]["last_gid"][map_name]:
+                        tile_id = images[img]["used_tiles"].index(tile_id - images[img]["first_gid"][map_name]) + images[img]['start_tile']
             else:
                 tile_id = tilemap[base_id]-1 if tilemap[base_id] != 0 else 0
 
@@ -308,7 +309,7 @@ def write_object_data(actors, boundaries, cpp):
 
     return spawn_point_names,boundary_data,gateway_data
 
-def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, image_file_name, tilesize, used_tiles, image_src):
+def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, tilesize, image_file_name, used_tiles, image_src):
     spawn_point_names,boundary_data,gateway_data = None,None,None
     name_upper = image_src.split(".")[0].upper()
     name_lower = image_src.split(".")[0].lower()
@@ -316,8 +317,8 @@ def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, b
     with open("src/" + name_lower + ".cpp","w",encoding='UTF-8') as cpp:
         cpp.write("#include \""+name_lower+".hpp\"\n\n")
 
-        cpp.write("#include \"bn_regular_bg_tiles_items_"+name_lower+".h\"\n")
-        cpp.write("#include \"bn_bg_palette_items_"+name_lower+"_palette.h\"\n\n")
+        cpp.write("#include \"bn_regular_bg_tiles_items_"+image_file_name+".h\"\n")
+        cpp.write("#include \"bn_bg_palette_items_"+image_file_name+"_palette.h\"\n\n")
 
         # TODO requires proper handling
         cpp.write("namespace " + config.NAMESPACE_COLON.lower() + "texts::"+name_lower+" {\n")
@@ -332,10 +333,10 @@ def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, b
 
         cpp.write("namespace " + config.NAMESPACE_COLON.lower() + "tilemaps::"+name_lower+" {\n")
 
-        cpp.write("    const bn::regular_bg_tiles_item* bg_tiles   = &bn::regular_bg_tiles_items::"+name_lower+";\n")
-        cpp.write("    const bn::bg_palette_item*       bg_palette = &bn::bg_palette_items::"+name_lower+"_palette;\n")
+        cpp.write("    const bn::regular_bg_tiles_item* bg_tiles   = &bn::regular_bg_tiles_items::"+image_file_name+";\n")
+        cpp.write("    const bn::bg_palette_item*       bg_palette = &bn::bg_palette_items::"+image_file_name+"_palette;\n")
 
-        create_tilemap_data(bitmap, layers, width, height, bitmap_width, image_file_name, tilesize, used_tiles, cpp)
+        create_tilemap_data(bitmap, name_lower, layers, width, height, bitmap_width, tilesize, image_file_name, used_tiles, cpp)
 
         if (config.PARSE_ACTORS and actors) or (config.PARSE_BOUNDARIES and boundaries):
             spawn_point_names,boundary_data,gateway_data = write_object_data(actors, boundaries, cpp)
@@ -344,14 +345,14 @@ def create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, b
 
     return spawn_point_names,boundary_data,gateway_data
 
-def create_data_files(bitmap, layers, actors, boundaries, width, height, bitmap_width, image_file_name, tilesize, used_tiles, image_src):
-    spawn_point_names,boundary_data,gateway_data = create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, image_file_name, tilesize, used_tiles, image_src)
+def create_data_files(bitmap, layers, actors, boundaries, width, height, bitmap_width, tilesize, image_file_name, used_tiles, image_src):
+    spawn_point_names,boundary_data,gateway_data = create_tilemap_cpp_file(bitmap, layers, actors, boundaries, width, height, bitmap_width, tilesize, image_file_name, used_tiles, image_src)
     create_tilemap_header_file(spawn_point_names, boundary_data, gateway_data, width, height, image_src)
 
 def create_map_data(mapdict,bitmap,tilemap_width):
     print("Generating map "+mapdict['map_name']+" with dimensions: "+\
-      str(int(mapdict['map_width']*(mapdict['images'][0]['tilesize']/8)))+"x"+\
-      str(int(mapdict['map_height']*(mapdict['images'][0]['tilesize']/8)))
+      str(int(mapdict['map_width']*(mapdict['map_tilesize']/8)))+"x"+\
+      str(int(mapdict['map_height']*(mapdict['map_tilesize']/8)))
     )
     if not config.FORCE_MAP_DATA_GENERATION and \
        os.path.exists("include/" + mapdict['map_name'] + ".hpp") and \
@@ -369,14 +370,19 @@ def create_map_data(mapdict,bitmap,tilemap_width):
             if config.PARSE_BOUNDARIES and object_group.getAttribute("name") == "boundaries":
                 boundaries = object_group
         layers = mapdict['tilemap_xml'].documentElement.getElementsByTagName("layer")
+        image_file_name = mapdict["map_name"]
+        used_tiles = mapdict["images"]
+        if mapdict["combined_tilemap"]:
+           image_file_name = mapdict["combined_tilemap"]["mapdict"]["map_name"]
+           used_tiles = mapdict["combined_tilemap"]["mapdict"]["images"]
         create_data_files(
             bitmap, layers, actors, boundaries,
-            int(mapdict['map_width']*(mapdict['images'][0]['tilesize']/8)),
-            int(mapdict['map_height']*(mapdict['images'][0]['tilesize']/8)),
-            int((tilemap_width*8)/mapdict['images'][0]['tilesize']),
-            int(mapdict['images'][0]['tilesize']/8), 
-            mapdict['map_name'],
-            mapdict['images'],
+            int(mapdict['map_width']*(mapdict['map_tilesize']/8)),
+            int(mapdict['map_height']*(mapdict['map_tilesize']/8)),
+            int((tilemap_width*8)/mapdict['map_tilesize']),
+            int(mapdict['map_tilesize']/8), 
+            image_file_name,
+            used_tiles,
             mapdict['map_name']
         )
 
@@ -453,12 +459,16 @@ if __name__ == "__main__":
                            help='Force all files generation')
     argparser.add_argument('--force-map-gen',dest='force_map',action='store_true',
                            help='Force tilemap data generation')
+    argparser.add_argument('-s','--save-temp-files',dest='save_temp_imgs',action='store_true',
+                           help='Save temporary files (like *_minimized.bmp and *_combined.bmp and some json files)')
     argparser.add_argument('--map-file',dest='tmx_override',
                            help='Specifiy tiled TMX map, ignoring maps.json; requires --map-name')
     argparser.add_argument('--map-name',dest='map_name',
                            help='Specifiy map name, ignoring maps.json; requires --map-file')
     argparser.add_argument('--no-minimization',dest='prevent_minimization',action='store_true',
                            help='Do not minimize tilemap before compression')
+    argparser.add_argument('--no-map-consolidation',dest='prevent_consolidation',action='store_true',
+                           help='Prevent consolidation of maps so each map will have their own generated tilemap')
     argparser.add_argument('-n','--namespace',dest='namespace',
                            help='Set namespace for project')
     argparser.add_argument('-o','--create-objects',dest='objects',action='store_true',
@@ -475,6 +485,8 @@ if __name__ == "__main__":
         config.FORCE_MAP_DATA_GENERATION = True
     if args.force_map:
         config.FORCE_MAP_DATA_GENERATION = True
+    if args.save_temp_imgs:
+        config.SAVE_TEMPORARY_IMAGES = True
     if ( args.tmx_override and not args.map_name ) or \
        ( not args.tmx_override and args.map_name ):
         print("If either --map-file or --map-name is set, the other must be set, too")
@@ -488,6 +500,8 @@ if __name__ == "__main__":
         config.MAP_NAME = args.map_name
     if args.prevent_minimization:
         config.PREVENT_TILEMAP_MINIMIZATION = True
+    if args.prevent_consolidation:
+        config.PREVENT_MAP_CONSOLIDATION = True
     if args.namespace:
         config.NAMESPACE = args.namespace
         config.NAMESPACE_UNDERSCORE = config.NAMESPACE + "_"
@@ -507,16 +521,22 @@ if __name__ == "__main__":
             maps = json.loads('[{"name":"'+config.MAP_NAME+'","tmx":"'+config.TMX_OVERRIDE+'"}]')
         else:
             maps = json.load(maps_json)
-        if not config.PREVENT_TILEMAP_MINIMIZATION:
-            map_data = get_used_tiles(maps)
-            for mapdict in map_data:
-                bitmap,tilemap_width = create_tilemap(mapdict)
-                create_map_data(mapdict,bitmap,tilemap_width)
-        else:
-            for tilemap in maps:
-                map_data = open_map(tilemap)
-                bitmap,tilemap_width = create_tilemap(map_data[0])
-                create_map_data(map_data[0],bitmap,tilemap_width)
+
+        map_data = get_map_data(maps)
+        if not config.PREVENT_MAP_CONSOLIDATION:
+            for map_name in map_data["combined_maps"]:
+                bitmap,tilemap_width,success = create_tilemap(map_data["combined_maps"][map_name],True)
+                if success:
+                    for combined_map in map_data["combined_maps"][map_name]["maps"]:
+                        map_data["maps"][combined_map]["combined_tilemap"] = {"mapdict":map_data["combined_maps"][map_name],"bitmap":bitmap}
+
+        for map_name in map_data["maps"]:
+            if config.PREVENT_MAP_CONSOLIDATION or not map_data["maps"][map_name]["combined_tilemap"]:
+                bitmap,tilemap_width,Null = create_tilemap(map_data["maps"][map_name])
+                create_map_data(map_data["maps"][map_name],bitmap,tilemap_width)
+            else:
+                print("Skipping generation of tileset \""+map_name+"\" since it is included in: "+map_data["maps"][map_name]["combined_tilemap"]["mapdict"]["map_name"])
+                create_map_data(map_data["maps"][map_name],map_data["maps"][map_name]["combined_tilemap"]["bitmap"],tilemap_width)
 
 
     if config.CREATE_GLOBALS_FILE:
