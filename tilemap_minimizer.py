@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-"""tilemap_minimizer.py: Generate minimized tilemaps from tilemaps referenced in tiled projects. """
+"""tilemap_minimizer.py: Generate minimized and consolidated tilemaps from maps
+                         referenced in tiled projects. """
 
 import os
 import sys
@@ -35,6 +36,7 @@ def base36encode(number, alphabet='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'):
     return sign + base36
 
 def find_used_tiles(tilemap_xml, first_gid, last_gid):
+    '''Iterates over all tiles used in the tiled TMX file and creates a list of used tiles.'''
     img_used_tiles = []
     for layer in tilemap_xml.documentElement.getElementsByTagName("layer"):
         data = layer.getElementsByTagName("data")[0].firstChild.nodeValue
@@ -49,6 +51,9 @@ def find_used_tiles(tilemap_xml, first_gid, last_gid):
     return img_used_tiles
 
 def create_tileset(mapdict):
+    '''Calculates the total tile count and sets appropriate image dimensions for the tileset
+       image. Raises warnings and errors if the tile count gets too large. Returns in-memory
+       tileset image.'''
     tile_count = 0
     for img in mapdict['images']:
         tilesize_factor = int(mapdict['images'][img]['tilesize']/8)
@@ -68,7 +73,7 @@ def create_tileset(mapdict):
         print("WARNING: There are likely too many tiles in "+mapdict['map_name']+\
               ": "+str(tile_count))
         print("         This will probably result in too many unique tiles, consider"+\
-              "using lesstiles in your map.")
+              "using less tiles in your map.")
         width = 512
     if tile_count >= 4096:
         height = 1024
@@ -89,6 +94,9 @@ def create_tileset(mapdict):
     return tilemap
 
 def create_minimized_tileset(mapdict, height, width):
+    '''Creates an RGB tileset image that contains only tiles actually used in a map.
+       Tiles can be from different source tileset images. Returns created image in memory
+       unless SAVE_TEMPORARY_FILES is set to True.'''
     tilemap = Image.new(
         'RGB',
         (width, height),
@@ -128,6 +136,10 @@ def create_minimized_tileset(mapdict, height, width):
     return tilemap
 
 def create_combined_tileset(mapdict, height, width):
+    '''Creates an RGB tileset image that contains the tiles of multiple maps. Tiles can be from
+       different source tileset images. Only called if tileset minimization is prevented, as
+       combined tilemaps are automatically created during minimization loop. Returns created
+       image in memory unless SAVE_TEMPORARY_FILES is set to True.'''
     tilemap = Image.new(
         'RGB',
         (width, height),
@@ -166,6 +178,7 @@ def create_combined_tileset(mapdict, height, width):
     return tilemap
 
 def save_map_data_metadata(map_data):
+    '''Creates a JSON file of the provided map_data. Used for debugging purposes.'''
     map_data_clean = {
         "maps":{},
         "tilesets":map_data["tilesets"],
@@ -193,6 +206,8 @@ def save_map_data_metadata(map_data):
 
 
 def open_map(tilemap_json, map_data):
+    '''Opens a tiled TMX file, analysing used tiles for each tilemap referenced in the
+       TMX file. Returns a complex dictionary containing the mapdata.'''
     map_name = tilemap_json["name"]
     tilemap_tmx_path = "graphics/ressources/" + tilemap_json["tmx"]
     tilemap_xml = xmlparse(tilemap_tmx_path)
@@ -261,6 +276,7 @@ def open_map(tilemap_json, map_data):
     return map_data
 
 def combine_map_relatives(maps):
+    '''Creates a dictionary for a tilemap image containing tiles used by multiple maps.'''
     map_name = "#".join(list(maps))
     map_name = base36encode(int(hashlib.sha256(map_name.encode('utf-8')).hexdigest(),base=36))[-8:]
     map_name = map_name.lower()
@@ -280,15 +296,13 @@ def combine_map_relatives(maps):
                 "start_tile": 0,
             }
             if maps[map_name]["images"][img]["image_file_name"] in mapdict["images"]:
+                tmpimgdict = mapdict["images"][maps[map_name]["images"][img]["image_file_name"]]
                 imgdict["first_gid"]  = \
-                    mapdict["images"][maps[map_name]["images"][img]["image_file_name"]]["first_gid"]\
-                    | maps[map_name]["images"][img]["first_gid"]
+                    tmpimgdict["first_gid"] | maps[map_name]["images"][img]["first_gid"]
                 imgdict["last_gid"]   = \
-                    mapdict["images"][maps[map_name]["images"][img]["image_file_name"]]["last_gid"]\
-                    | maps[map_name]["images"][img]["last_gid"]
+                    tmpimgdict["last_gid"] | maps[map_name]["images"][img]["last_gid"]
                 imgdict["used_tiles"] = list(set(
-                    mapdict["images"][maps[map_name]["images"][img]["image_file_name"]]["used_tiles"]\
-                    + maps[map_name]["images"][img]["used_tiles"]
+                    tmpimgdict["used_tiles"] + maps[map_name]["images"][img]["used_tiles"]
                 ))
             else:
                 imgdict["first_gid"]  = maps[map_name]["images"][img]["first_gid"]
@@ -307,6 +321,7 @@ def combine_map_relatives(maps):
     return mapdict
 
 def find_map_relatives(map_data):
+    '''Iterates through all maps to find tiles used across individual maps.'''
     naive_map_relatives = []
     for tileset in map_data["tilesets"]:
         if len(tileset["maps"]) > 1:
@@ -322,12 +337,12 @@ def find_map_relatives(map_data):
                 naive_map_relatives.append(tileset["maps"])
 
     map_relatives = []
-    for i in range(len(naive_map_relatives)):
+    for i,relative in enumerate(naive_map_relatives):
         for j in range(i+1,len(naive_map_relatives)):
-            for k in range(len(naive_map_relatives[i])):
-                if naive_map_relatives[i][k] in naive_map_relatives[j]:
+            for k in range(len(relative)): # pylint: disable=consider-using-enumerate
+                if relative[k] in naive_map_relatives[j]:
                     map_relatives.append(list(set().union(
-                        naive_map_relatives[i],naive_map_relatives[j]
+                        relative,naive_map_relatives[j]
                     )))
 
     for maps in naive_map_relatives:
@@ -336,6 +351,7 @@ def find_map_relatives(map_data):
     return map_relatives
 
 def get_map_data(maps):
+    '''Generates a dictionary of all maps, calls tileset creation and consolidates.'''
     print("scanning maps...")
     map_data = json.loads('{"maps":{},"tilesets":[],"map_relatives":[],"combined_maps":{}}')
     for tilemap in maps:
