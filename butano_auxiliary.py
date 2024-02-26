@@ -6,21 +6,18 @@
 import os
 import sys
 import json
-import math
 import argparse
-from xml.dom.minidom import parse as xmlparse
-from numpy import subtract
-from PIL import Image, ImageOps
 
 import config
-from tilemap_compressor import *
-from mapdata_generator import *
-from tilemap_minimizer import *
+import tilemap_compressor as tc
+import mapdata_generator as mg
+import tilemap_minimizer as tm
+from mapdata_models import MapObject
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(
         description="""
-            Generate minimized tilemaps and butano-compatible map headers from tiled projects. 
+            Generate butano-compatible map headers from tiled projects.
             """)
     argparser.add_argument('-f','--force',dest='force',action='store_true',
                            help='Force all files generation')
@@ -29,15 +26,18 @@ if __name__ == "__main__":
     argparser.add_argument('--force-map-gen',dest='force_map',action='store_true',
                            help='Force tilemap data generation')
     argparser.add_argument('-s','--save-temp-files',dest='save_temp_imgs',action='store_true',
-                           help='Save temporary files (like *_minimized.bmp and *_combined.bmp and some json files)')
+                           help="""Save temporary files (like *_minimized.bmp and *_combined.bmp
+                                   and some json files)""")
     argparser.add_argument('--map-file',dest='tmx_override',
                            help='Specifiy tiled TMX map, ignoring maps.json; requires --map-name')
     argparser.add_argument('--map-name',dest='map_name',
                            help='Specifiy map name, ignoring maps.json; requires --map-file')
     argparser.add_argument('--no-minimization',dest='prevent_minimization',action='store_true',
                            help='Do not minimize tilemap before compression')
-    argparser.add_argument('--no-map-consolidation',dest='prevent_consolidation',action='store_true',
-                           help='Prevent consolidation of maps so each map will have their own generated tilemap')
+    argparser.add_argument('--no-map-consolidation',
+                           dest='prevent_consolidation',action='store_true',
+                           help="""Prevent consolidation of maps so each map will have their own
+                                   generated tilemap""")
     argparser.add_argument('-n','--namespace',dest='namespace',
                            help='Set namespace for project')
     argparser.add_argument('-o','--create-objects',dest='objects',action='store_true',
@@ -48,6 +48,12 @@ if __name__ == "__main__":
                            help='Parse boundary layer')
     argparser.add_argument('-g','--globals',dest="globals",action='store_true',
                            help='Create globals file')
+    argparser.add_argument('-a','--author',dest='author_name',
+                           help='Author name to be put into copyright line.')
+    argparser.add_argument('-m','--mail',dest='author_mail',
+                           help='Author mail address to be put into copyright line.')
+    argparser.add_argument('--header-line',dest='header_line',
+                           help='Author name to be put into copyright line.')
     args = argparser.parse_args()
 
     if args.force:
@@ -87,30 +93,42 @@ if __name__ == "__main__":
         config.PARSE_BOUNDARIES = True
     if args.globals:
         config.CREATE_GLOBALS_FILE = True
+    if args.author_name:
+        config.AUTHOR_NAME = args.author_name
+    if args.author_mail:
+        config.AUTHOR_MAIL = args.author_mail
+    if args.header_line:
+        config.FILE_HEADER = args.header_line
 
-    with open("graphics/ressources/maps.json") as maps_json:
+    with open("graphics/ressources/maps.json", encoding="utf-8") as maps_json:
         if config.TMX_OVERRIDE and config.MAP_NAME:
             maps = json.loads('[{"name":"'+config.MAP_NAME+'","tmx":"'+config.TMX_OVERRIDE+'"}]')
         else:
             maps = json.load(maps_json)
 
-        map_data = get_map_data(maps)
+        map_data = tm.get_map_data(maps)
         if not config.PREVENT_MAP_CONSOLIDATION:
             for map_name in map_data["combined_maps"]:
-                bitmap,tilemap_width,success = create_tilemap(map_data["combined_maps"][map_name],True)
+                cmap_data = map_data["combined_maps"][map_name]
+                bitmap,tilemap_width,success = tc.create_tilemap(cmap_data,True)
                 if success:
-                    for combined_map in map_data["combined_maps"][map_name]["maps"]:
-                        map_data["maps"][combined_map]["combined_tilemap"] = {"mapdict":map_data["combined_maps"][map_name],"bitmap":bitmap}
+                    for combined_map in cmap_data["maps"]:
+                        map_data["maps"][combined_map]["combined_tilemap"] = {
+                            "mapdict":cmap_data,
+                            "bitmap":bitmap,
+                            "tilemap_width":tilemap_width
+                        }
 
         for map_name in map_data["maps"]:
-            if config.PREVENT_MAP_CONSOLIDATION or not map_data["maps"][map_name]["combined_tilemap"]:
-                bitmap,tilemap_width,Null = create_tilemap(map_data["maps"][map_name])
-                create_map_data(map_data["maps"][map_name],bitmap,tilemap_width)
-            else:
-                print("Skipping generation of tileset \""+map_name+"\" since it is included in: "+map_data["maps"][map_name]["combined_tilemap"]["mapdict"]["map_name"])
-                create_map_data(map_data["maps"][map_name],map_data["maps"][map_name]["combined_tilemap"]["bitmap"],tilemap_width)
+            Map = MapObject()
+            Map.init(map_data["maps"][map_name])
+            Map = mg.gather_map_data(Map)
+            if Map:
+                Map = mg.calculate_tilemap_data(Map)
+                mg.write_tilemap_header_file(Map)
+                mg.write_tilemap_cpp_file(Map)
 
     if config.CREATE_GLOBALS_FILE:
-        create_tilemap_globals_file()
+        mg.write_tilemap_globals_file()
 
     print("Finished")

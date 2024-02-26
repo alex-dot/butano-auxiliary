@@ -1,14 +1,5 @@
 """globals.py: Used to share global variables between submodules."""
 
-global H_FLIP, V_FLIP
-global FORCE_IMAGE_GENERATION, FORCE_MAP_DATA_GENERATION
-global PREVENT_TILEMAP_MINIMIZATION, PREVENT_MAP_CONSOLIDATION
-global NAMESPACE, NAMESPACE_UNDERSCORE, NAMESPACE_COLON
-global PARSE_BOUNDARIES, PARSE_ACTORS
-global CREATE_GLOBALS_FILE
-global MAP_NAME,TMX_OVERRIDE
-global SAVE_TEMPORARY_FILES
-
 H_FLIP = 1024
 V_FLIP = 2048
 
@@ -25,3 +16,7 @@ CREATE_GLOBALS_FILE = False
 TMX_OVERRIDE = None
 MAP_NAME = None
 SAVE_TEMPORARY_FILES = False
+
+AUTHOR_NAME = "Butano Auxiliary"
+AUTHOR_MAIL = "butano_auxiliary@gba.org"
+FILE_HEADER = "This file is part of a super awesome GBA project!"

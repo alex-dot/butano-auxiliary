@@ -6,6 +6,11 @@ This repository contains scripts for use in [butano](https://github.com/GValient
 
 This script creates a minimized tilemap BMP file, a palette BMP file and a C++ header file containing map data, all to be used in a butano project. As a basis for this it needs both the original, generic tilemap graphics file and a tiled project file (.tmx). 
 
+Supports:
+- Minimzation: Create tilemap image containing only used tiles
+- Consolidation: Create a single tilemap image out of multiple (minimized) tilemaps
+- Compression: Create tilemap image containing only unique tiles (supports horizontal and vertical flipping)
+
 ### How it works
 
 - Iterate over all JSON files in /graphics which will represent the final tilemap
