@@ -387,10 +387,21 @@ def write_object_data(Map, cpp):
     '''Conditionally calls other object write functions and closes with metadata info.'''
     if Map.boundaries:
         write_boundary_data(Map.boundaries, "boundaries", cpp)
+    else:
+        print("Warning: No boundary data found, characters will be able to walk anywhere.")
+        write_boundary_data([], "boundaries", cpp)
+
     if Map.gateways:
         write_boundary_data(Map.gateways, "gateways", cpp)
+    else:
+        print("Warning: No gateway data found, map must be loaded manually.")
+        write_boundary_data([], "gateways", cpp)
+
     if Map.spawn_points:
         write_spawnpoint_data(Map.spawn_points, cpp)
+    else:
+        print("Warning: No spawnpoint data found, characters will be spawned at 0,0.")
+        write_spawnpoint_data([], cpp)
 
     cpp.write("    const metadata_t metadata = {\n")
     cpp.write("        uint8_t("+str(len(Map.spawn_points))+"),\n")      # spawn_point count
@@ -416,7 +427,7 @@ def write_tilemap_cpp_file(Map):
         # TODO requires proper handling
         cpp.write("namespace " + config.NAMESPACE_COLON.lower() +\
                   "actors::"+Map.name_lower()+" {\n")
-        if (config.PARSE_ACTORS and Map.objects):
+        if (config.PARSE_ACTORS):
             write_actor_data(Map,cpp)
         cpp.write("}\n\n")
 
@@ -457,12 +468,15 @@ def gather_map_data(Map):
                     if obj.getAttribute("type") == "spawn_point"\
                     or obj.getAttribute("class") == "spawn_point":
                         Map.spawn_points.append(obj)
+
                     if obj.getAttribute("type") == "gateway"\
                     or obj.getAttribute("class") == "gateway":
                         Map.gateways.append(calculate_boundary_data(obj))
+
                     if obj.getAttribute("type") == "chest"\
                     or obj.getAttribute("class") == "chest":
                         Map.objects.append(obj)
+
             if config.PARSE_BOUNDARIES and object_group.getAttribute("name") == "boundaries":
                 for obj in object_group.getElementsByTagName("object"):
                     if obj.getAttribute("type") == "boundary"\
