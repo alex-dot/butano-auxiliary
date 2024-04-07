@@ -8,6 +8,7 @@ import sys
 import json
 import hashlib
 import argparse
+import numpy as np
 from xml.dom.minidom import parse as xmlparse
 from PIL import Image
 
@@ -34,6 +35,24 @@ def base36encode(number, alphabet='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'):
         base36 = alphabet[i] + base36
 
     return sign + base36
+
+# From Stackoverflow: https://stackoverflow.com/a/3169874
+def change_colour_value(src_image, orig_colour, target_colour = (255, 0, 255, 0)):
+    '''Changes all pixels of a certain colour to the target_colour.'''
+    data = np.array(src_image)           # "data" is a height x width x 4 numpy array
+    data[(data == orig_colour).all(axis = -1)] = target_colour
+    new_image = Image.fromarray(data, mode='RGBA')
+    return new_image
+
+def is_uniform_colour(tile):
+    '''Does a pixel by pixel comparison of 8x8 tile. Returns True if all pixels are the same
+       colour, return False otherwise.'''
+    base_colour = tile.getpixel((0,0))
+    for x in range(8):
+        for y in range(8):
+            if (np.subtract(base_colour,tile.getpixel((x,y))) != [0,0,0,0]).any():
+                return False
+    return base_colour
 
 def find_used_tiles(tilemap_xml, first_gid, last_gid):
     '''Iterates over all tiles used in the tiled TMX file and creates a list of used tiles.'''
@@ -72,7 +91,7 @@ def create_tileset(mapdict):
     if tile_count >= 2048:
         print("WARNING: There are likely too many tiles in "+mapdict['map_name']+\
               ": "+str(tile_count))
-        print("         This will probably result in too many unique tiles, consider"+\
+        print("         This will probably result in too many unique tiles, consider "+\
               "using less tiles in your map.")
         width = 512
     if tile_count >= 4096:
@@ -93,6 +112,54 @@ def create_tileset(mapdict):
 
     return tilemap
 
+def is_colour_used_in_image(tilemap, colour):
+    '''Checks if a specific colour is used in the image.'''
+    data = np.array(tilemap)
+    if colour in data:
+        return True
+    return False
+
+def get_transparency_colour(tilemap, tilesize, tilemap_name):
+    '''Tries to ascertain the currently used transparency colour, emits a Warning if no
+       transparency colour could be determined.'''
+    tile_id,colour = find_transparency_tile(tilemap, tilesize)
+    if tile_id is False:
+        if is_colour_used_in_image(tilemap, (0,0,0,0)):
+            colour = (0,0,0,0)
+        else:
+            print("Error: No transparency colour could be determined on tilemap image: " + tilemap_name)
+    return colour
+
+def find_transparency_tile(tilemap, tilesize):
+    '''Tries to find a tilewidth by tileheight large tile that is uniformly one colour. If
+       the tilemap image is regular, this should be the very first tile in the image (i.e. at 0,0).
+       Stops at the first tile found. '''
+    j = 0
+    for y in range(int( tilemap.width / tilesize )):
+        for x in range(int( tilemap.width / tilesize )):
+            region = (
+                x*tilesize,y*tilesize,
+                (x+1)*tilesize,(y+1)*tilesize
+            )
+            tile = tilemap.crop(region)
+            if is_uniform_colour(tile):
+                colour = tile.getpixel((0,0))
+                return j,colour
+            j += 1
+    return False,False
+
+def unify_transparency_colour(tilemap, tilesize, tilemap_name):
+    '''Transforms all transparent pixels in the image to use the standard transparency colour
+       (aka the pink pixel), unless an alternative transparency colour is supplied.'''
+    colour = get_transparency_colour(tilemap, tilesize, tilemap_name)
+    if colour is not False:
+        # Check if pink is used as a colour. If yes, slightly change it
+        if is_colour_used_in_image(tilemap, (255,0,255,255)):
+            tilemap = change_colour_value(tilemap, (255,0,255,255), (255, 0, 254, 255))
+
+        tilemap = change_colour_value(tilemap, colour)
+    return tilemap
+
 def create_minimized_tileset(mapdict, height, width):
     '''Creates an RGB tileset image that contains only tiles actually used in a map.
        Tiles can be from different source tileset images. Returns created image in memory
@@ -103,11 +170,17 @@ def create_minimized_tileset(mapdict, height, width):
         (255,0,255)
     )
 
-    i,j = 0,0
+    i,j = 0,1 # starting at tile 1 as we need an empty tile at 0
+
     for img in mapdict['images']:
         tilemap_src = Image.open(
             "graphics/ressources/" +mapdict['images'][img]['image_src']
-        ).convert('RGB')
+        ).convert('RGBA')
+        tilemap_src = unify_transparency_colour(
+            tilemap_src,
+            mapdict['images'][img]['tilesize'],
+            mapdict['images'][img]['image_src']
+        )
         for tid in mapdict['images'][img]['used_tiles']:
             x = tid % int( tilemap_src.width / mapdict['images'][img]['tilesize'] )
             y = int(tid / int( tilemap_src.width / mapdict['images'][img]['tilesize'] ))
@@ -131,6 +204,7 @@ def create_minimized_tileset(mapdict, height, width):
                 j = 0
 
     if config.SAVE_TEMPORARY_FILES:
+
         tilemap.save("graphics/ressources/" + mapdict['map_name'] + "_minimized.bmp","BMP")
 
     return tilemap
@@ -146,11 +220,17 @@ def create_combined_tileset(mapdict, height, width):
         (255,0,255)
     )
 
-    i,j = 0,0
+    i,j = 0,1 # starting at tile 1 as we need an empty tile at 0
+
     for img in mapdict['images']:
         tilemap_src = Image.open(
             "graphics/ressources/" + mapdict['images'][img]['image_src']
-        ).convert('RGB')
+        ).convert('RGBA')
+        tilemap_src = unify_transparency_colour(
+            tilemap_src,
+            mapdict['images'][img]['tilesize'],
+            mapdict['images'][img]['image_src']
+        )
         for y in range(int( tilemap_src.width / mapdict['images'][img]['tilesize'] )):
             for x in range(int( tilemap_src.width / mapdict['images'][img]['tilesize'] )):
                 region = (
@@ -402,7 +482,7 @@ if __name__ == "__main__":
     if args.force_img:
         config.FORCE_IMAGE_GENERATION = True
     if args.save_temp_imgs:
-        config.SAVE_TEMPORARY_IMAGES = True
+        config.SAVE_TEMPORARY_FILES = True
     if ( args.tmx_override and not args.map_name ) or \
        ( not args.tmx_override and args.map_name ):
         print("If either --map-file or --map-name is set, the other must be set, too")

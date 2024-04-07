@@ -106,12 +106,15 @@ def calculate_tilemap_data(Map):
             else:
                 tile_id = tilemap[base_id]-1 if tilemap[base_id] != 0 else 0
 
+            # offset all tiles to account for the transparent tile at the beginning
+            tile_id += 1 if tile_id != 0 else 0
+
             real_id = tile_id%Map.bitmap_width*Map.tilesize_factor+\
                       int(tile_id/Map.bitmap_width)*Map.bitmap_width*\
                       Map.tilesize_factor*Map.tilesize_factor+\
                       y_offset*Map.bitmap_width*Map.tilesize_factor + x_offset
-            flip_offset = 0
 
+            flip_offset = 0
             if Map.bitmap[real_id]["h_flipped"]:
                 flip_offset += config.H_FLIP
             if Map.bitmap[real_id]["v_flipped"]:
@@ -530,7 +533,7 @@ if __name__ == "__main__":
     if args.force_map:
         config.FORCE_MAP_DATA_GENERATION = True
     if args.save_temp_imgs:
-        config.SAVE_TEMPORARY_IMAGES = True
+        config.SAVE_TEMPORARY_FILES = True
     if ( args.tmx_override and not args.map_name ) or \
        ( not args.tmx_override and args.map_name ):
         print("If either --map-file or --map-name is set, the other must be set, too")

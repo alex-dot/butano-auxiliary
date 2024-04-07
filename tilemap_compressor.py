@@ -14,7 +14,7 @@ import config
 import tilemap_minimizer as tm
 from mapdata_models import TilemapImageObject
 
-def pixel_compare(left, right):
+def tile_compare(left, right):
     '''Does a pixel by pixel comparison of 8x8 tile. Returns True if all pixels are the same
        color, return False otherwise.'''
     for x in range(8):
@@ -50,19 +50,19 @@ def compare_tiles(tilemap_src):
                         continue
                     comp_region = (i*8,j*8,(i+1)*8,(j+1)*8)
                     comp_tile = tilemap_src.crop(comp_region)
-                    if pixel_compare(tile, comp_tile):
+                    if tile_compare(tile, comp_tile):
                         tilemap_tiles[j*columns+i]['unique'] = False
                         tilemap_tiles[j*columns+i]['relative'] = (x,y)
                         continue
                     comp_tile = ImageOps.flip(comp_tile)
-                    if pixel_compare(tile, comp_tile):
+                    if tile_compare(tile, comp_tile):
                         tilemap_tiles[j*columns+i]['unique'] = False
                         tilemap_tiles[j*columns+i]['relative'] = (x,y)
                         tilemap_tiles[j*columns+i]['v_flipped'] = True
                         continue
                     comp_tile = tilemap_src.crop(comp_region)
                     comp_tile = comp_tile.rotate(180)
-                    if pixel_compare(tile, comp_tile):
+                    if tile_compare(tile, comp_tile):
                         tilemap_tiles[j*columns+i]['unique'] = False
                         tilemap_tiles[j*columns+i]['relative'] = (x,y)
                         tilemap_tiles[j*columns+i]['v_flipped'] = True
@@ -71,7 +71,7 @@ def compare_tiles(tilemap_src):
                     comp_tile = tilemap_src.crop(comp_region)
                     comp_tile = comp_tile.rotate(180)
                     comp_tile = ImageOps.flip(comp_tile)
-                    if pixel_compare(tile, comp_tile):
+                    if tile_compare(tile, comp_tile):
                         tilemap_tiles[j*columns+i]['unique'] = False
                         tilemap_tiles[j*columns+i]['relative'] = (x,y)
                         tilemap_tiles[j*columns+i]['h_flipped'] = True
@@ -115,8 +115,8 @@ def create_tilemap_palette(tilemap_min,image_file_name):
 
     # If the transparent pixel (0,0) is black (e.g. the loaded image was a PNG with alpha=0),
     # set it as a pink pixel instead
-    if palette_list[0][0] == 0 and palette_list[0][1] == 0 and palette_list[0][2] == 0:
-        palette_list[0] = (255,0,255)
+    #if palette_list[0][0] == 0 and palette_list[0][1] == 0 and palette_list[0][2] == 0:
+    palette_list[0] = (255,0,255)
 
     palette_list_flat = []
     for rgb in palette_list:
@@ -195,7 +195,7 @@ def create_paletted_tilemap_image(tilemap,palette_list,palette_list_flat):
     tilemap_min_p = Image.new(
         'P',
         (tilemap.min_width, tilemap.min_height),
-        tilemap.original.getpixel((0,0))
+        (255,0,255)
     )
     tilemap_min_p.putpalette(palette_list_flat)
     for y in range(tilemap.min_height):
@@ -359,7 +359,7 @@ if __name__ == "__main__":
     if args.force_img:
         config.FORCE_IMAGE_GENERATION = True
     if args.save_temp_imgs:
-        config.SAVE_TEMPORARY_IMAGES = True
+        config.SAVE_TEMPORARY_FILES = True
     if ( args.tmx_override and not args.map_name ) or \
        ( not args.tmx_override and args.map_name ):
         print("If either --map-file or --map-name is set, the other must be set, too")

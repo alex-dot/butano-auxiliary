@@ -62,7 +62,7 @@ if __name__ == "__main__":
     if args.force_img:
         config.FORCE_IMAGE_GENERATION = True
     if args.save_temp_imgs:
-        config.SAVE_TEMPORARY_IMAGES = True
+        config.SAVE_TEMPORARY_FILES = True
     if ( args.tmx_override and not args.map_name ) or \
        ( not args.tmx_override and args.map_name ):
         print("If either --map-file or --map-name is set, the other must be set, too")
