@@ -28,14 +28,13 @@ def calculate_boundary_data(boundary):
     '''This function is meant to be invoked for each boundary or similar polygon object in the
        tiled TMX file. For such an object it creates a list of points that make up that polygon,
        also takes note of the minimum and maximum values for x and y, and some more metadata.'''
-    number_of_points = len(boundary.getElementsByTagName("polygon")[0]\
-                                   .getAttribute("points").split(" "))
-    origin = (boundary.getAttribute("x"),boundary.getAttribute("y"))
+    number_of_points = len(boundary.find("polygon").get("points").split(" "))
+    origin = (boundary.get("x"),boundary.get("y"))
 
     min_x,max_x,min_y,max_y = math.inf,0,math.inf,0
     points = []
 
-    for point in boundary.getElementsByTagName("polygon")[0].getAttribute("points").split(" "):
+    for point in boundary.find("polygon").get("points").split(" "):
         x = int(float(point.split(",")[0]) + float(origin[0]))
         x = 0 if x < 0 else x
         y = int(float(point.split(",")[1]) + float(origin[1]))
@@ -49,11 +48,12 @@ def calculate_boundary_data(boundary):
         points.append({'x':str(x),'y':str(y)})
 
     map_name,spawn_point_name = None,None
-    for prop in boundary.getElementsByTagName("property"):
-        if prop.getAttribute("name") == "destination":
-            map_name = prop.getAttribute("value")
-        if prop.getAttribute("name") == "spawnpoint":
-            spawn_point_name = prop.getAttribute("value")
+    if boundary.find("properties"):
+        for prop in boundary.find("properties").findall("property"):
+            if prop.get("name") == "destination":
+                map_name = prop.get("value")
+            if prop.get("name") == "spawnpoint":
+                spawn_point_name = prop.get("value")
 
     return {
                 'number_of_points':number_of_points, 
@@ -75,8 +75,8 @@ def calculate_tilemap_data(Map):
        finally calculate the real_id of the tile in the tilemap image that base_id corresponds to.
        After that, modify the real_id with flipping information.'''
     for layer in Map.map_layers:
-        layer_name = layer.getAttribute("name")
-        tilemap = parse_csv_tmx_map(layer.getElementsByTagName("data")[0].firstChild.nodeValue)
+        layer_name = layer.get("name")
+        tilemap = parse_csv_tmx_map(layer.find("data").text)
         Map.tilelist += "        // "+layer_name+" layer\n"
 
         tilelist = "        "
@@ -241,7 +241,7 @@ def write_tilemap_header_file(Map):
         if config.PARSE_ACTORS:
             for spawn_point in Map.spawn_points:
                 hpp.write("    extern const spawn_point_t "+\
-                          "spawn_point_"+spawn_point.getAttribute("name")+";\n")
+                          "spawn_point_"+spawn_point.get("name")+";\n")
             hpp.write("    extern const spawn_point_t "+\
                       "spawn_points["+str(len(Map.spawn_points))+"];\n")
 
@@ -319,20 +319,20 @@ def write_boundary_data(boundary_data, typename, cpp):
 def write_spawnpoint_data(spawn_point_data, cpp):
     '''Writes data for spawnpoints.'''
     for spawn_point in spawn_point_data:
-        name = spawn_point.getAttribute("name")
+        name = spawn_point.get("name")
         if len(name) > 5:
             print("Warning: Name of spawn_point ("+name+") too long, contracted to: "+name[:5])
 
         cpp.write("    const spawn_point_t spawn_point_"+name+" = {\n")
-        cpp.write("        "+str(int(float(spawn_point.getAttribute("x"))))+",\n")
-        cpp.write("        "+str(int(float(spawn_point.getAttribute("y"))))+",\n")
+        cpp.write("        "+str(int(float(spawn_point.get("x"))))+",\n")
+        cpp.write("        "+str(int(float(spawn_point.get("y"))))+",\n")
 
         face_direction, default_spawn_point = None, None
-        for prop in spawn_point.getElementsByTagName("property"):
-            if prop.getAttribute("name") == "default":
-                default_spawn_point = prop.getAttribute("value")
-            if prop.getAttribute("name") == "face_direction":
-                face_direction = prop.getAttribute("value")
+        for prop in spawn_point.find("properties").findall("property"):
+            if prop.get("name") == "default":
+                default_spawn_point = prop.get("value")
+            if prop.get("name") == "face_direction":
+                face_direction = prop.get("value")
 
         if face_direction == "up":
             cpp.write("        "+config.NAMESPACE_UNDERSCORE.upper()+"CHAR_FACE_UP,\n")
@@ -352,7 +352,7 @@ def write_spawnpoint_data(spawn_point_data, cpp):
 
     cpp.write("    const spawn_point_t spawn_points["+str(len(spawn_point_data))+"] = {\n")
     for spawn_point in spawn_point_data:
-        cpp.write("        spawn_point_"+spawn_point.getAttribute("name")+",\n")
+        cpp.write("        spawn_point_"+spawn_point.get("name")+",\n")
     cpp.write("    };\n\n")
 
 def write_actor_data(Map, cpp):
@@ -360,22 +360,22 @@ def write_actor_data(Map, cpp):
     item_data = ["","potion"]
     chest_data = []
     for actors in Map.objects:
-        cpp.write("    const container_t "+actors.getAttribute("name")+" = {\n")
-        for prop in actors.getElementsByTagName("property"):
-            if prop.getAttribute("name") == "contains":
-                for item in prop.getAttribute("value").split(")"):
+        cpp.write("    const container_t "+actors.get("name")+" = {\n")
+        for prop in actors.find("properties").findall("property"):
+            if prop.get("name") == "contains":
+                for item in prop.get("value").split(")"):
                     if item:
                         item_name = item_data[int(item.split(",")[0][1:])]
                         item_count = item.split(",")[1]
                         cpp.write("        \""+item_name+"\","+item_count+",\n")
-        tlx = str(int(float(actors.getAttribute("x"))))
-        tly = str(int(float(actors.getAttribute("y")))-int(float(actors.getAttribute("height"))))
-        brx = str(int(float(actors.getAttribute("x")))+int(float(actors.getAttribute("width"))))
-        bry = str(int(float(actors.getAttribute("y"))))
+        tlx = str(int(float(actors.get("x"))))
+        tly = str(int(float(actors.get("y")))-int(float(actors.get("height"))))
+        brx = str(int(float(actors.get("x")))+int(float(actors.get("width"))))
+        bry = str(int(float(actors.get("y"))))
         cpp.write("        "+tlx+","+tly+",\n")
         cpp.write("        "+brx+","+bry+"\n")
         cpp.write("    };\n")
-        chest_data.append({'name':actors.getAttribute("name")})
+        chest_data.append({'name':actors.get("name")})
 
     cpp.write("\n    const container_t* containers = {\n")
     for chest in chest_data:
@@ -465,25 +465,26 @@ def gather_map_data(Map):
         Map = None
     else:
         Map.boundaries, Map.spawn_points, Map.gateways, Map.objects = [],[],[],[]
-        for object_group in Map.xml.documentElement.getElementsByTagName("objectgroup"):
-            if config.PARSE_ACTORS and object_group.getAttribute("name") == "actors":
-                for obj in object_group.getElementsByTagName("object"):
-                    if obj.getAttribute("type") == "spawn_point"\
-                    or obj.getAttribute("class") == "spawn_point":
+        for object_group in Map.xml.findall("objectgroup"):
+            if config.PARSE_ACTORS and object_group.get("name") == "actors":
+                for obj in object_group.findall("object"):
+#                    print(ET.tostring(obj))
+                    if obj.get("type") == "spawn_point"\
+                    or obj.get("class") == "spawn_point":
                         Map.spawn_points.append(obj)
 
-                    if obj.getAttribute("type") == "gateway"\
-                    or obj.getAttribute("class") == "gateway":
+                    if obj.get("type") == "gateway"\
+                    or obj.get("class") == "gateway":
                         Map.gateways.append(calculate_boundary_data(obj))
 
-                    if obj.getAttribute("type") == "chest"\
-                    or obj.getAttribute("class") == "chest":
+                    if obj.get("type") == "chest"\
+                    or obj.get("class") == "chest":
                         Map.objects.append(obj)
 
-            if config.PARSE_BOUNDARIES and object_group.getAttribute("name") == "boundaries":
-                for obj in object_group.getElementsByTagName("object"):
-                    if obj.getAttribute("type") == "boundary"\
-                    or obj.getAttribute("class") == "boundary":
+            if config.PARSE_BOUNDARIES and object_group.get("name") == "boundaries":
+                for obj in object_group.findall("object"):
+                    if obj.get("type") == "boundary"\
+                    or obj.get("class") == "boundary":
                         Map.boundaries.append(calculate_boundary_data(obj))
 
     return Map

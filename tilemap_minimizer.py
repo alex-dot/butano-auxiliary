@@ -9,7 +9,7 @@ import json
 import hashlib
 import argparse
 import numpy as np
-from xml.dom.minidom import parse as xmlparse
+import xml.etree.ElementTree as ET
 from PIL import Image
 
 import config
@@ -57,8 +57,8 @@ def is_uniform_colour(tile):
 def find_used_tiles(tilemap_xml, first_gid, last_gid):
     '''Iterates over all tiles used in the tiled TMX file and creates a list of used tiles.'''
     img_used_tiles = []
-    for layer in tilemap_xml.documentElement.getElementsByTagName("layer"):
-        data = layer.getElementsByTagName("data")[0].firstChild.nodeValue
+    for layer in tilemap_xml.iter("layer"):
+        data = layer.find("data").text
         for value in data.split(","):
             if value not in ("\n",""):
                 if int(value) >= first_gid and int(value) < last_gid:
@@ -290,10 +290,10 @@ def open_map(tilemap_json, map_data):
        TMX file. Returns a complex dictionary containing the mapdata.'''
     map_name = tilemap_json["name"]
     tilemap_tmx_path = "graphics/ressources/" + tilemap_json["tmx"]
-    tilemap_xml = xmlparse(tilemap_tmx_path)
-    map_width = int(tilemap_xml.documentElement.getAttribute("width"))
-    map_height = int(tilemap_xml.documentElement.getAttribute("height"))
-    map_tilesize = int(tilemap_xml.documentElement.getAttribute("tilewidth"))
+    tilemap_xml = ET.parse(tilemap_tmx_path).getroot()
+    map_width = int(tilemap_xml.get("width"))
+    map_height = int(tilemap_xml.get("height"))
+    map_tilesize = int(tilemap_xml.get("tilewidth"))
 
     mapdict = {
         'tilemap_xml': tilemap_xml,
@@ -308,21 +308,20 @@ def open_map(tilemap_json, map_data):
     }
 
     tsx_list = []
-    for tsx in tilemap_xml.documentElement.getElementsByTagName("tileset"):
+    for tsx in tilemap_xml.iter("tileset"):
         if len(tsx_list) > 0:
-            tsx_list[len(tsx_list)-1]["last_gid"] = int(tsx.getAttribute("firstgid")) - 1
+            tsx_list[len(tsx_list)-1]["last_gid"] = int(tsx.get("firstgid")) - 1
         tsx_list.append({
-            "path": tsx.getAttribute("source"),
-            "first_gid": int(tsx.getAttribute("firstgid")),
+            "path": tsx.get("source"),
+            "first_gid": int(tsx.get("firstgid")),
             "last_gid": 99999999999
         })
 
     start_tile = 0
     for tsx in tsx_list:
-        tilemap_tsx = xmlparse("graphics/ressources/" + tsx['path'])
-        image_src = tilemap_tsx.documentElement.getElementsByTagName("image")[0]\
-                                               .getAttribute("source")
-        tilesize = int(tilemap_tsx.documentElement.getAttribute("tilewidth"))
+        tilemap_tsx = ET.parse("graphics/ressources/" + tsx['path']).getroot()
+        image_src = tilemap_tsx.find("image").get("source")
+        tilesize = int(tilemap_tsx.get("tilewidth"))
         image_file_name = image_src.split("/")[len(image_src.split("/"))-1]
         image_file_name = image_file_name.split(".")[len(image_file_name.split("."))-2].lower()
 

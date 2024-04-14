@@ -3,9 +3,7 @@
 """mapdata_models.py: Defines map models to be used in the generation of butano-compatible
                       source files."""
 
-from xml.dom.minidom import Element as xmlElement
-from xml.dom.minidom import Document as xmlDocument
-from xml.dom.minicompat import NodeList
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from PIL import Image
 
@@ -36,13 +34,13 @@ class MapObject:
     tilesize_factor: int = 0 # 1=8px, 2=16px, 4=32px, etc.
     tiles: dict = None           # dict of which tiles are used how
     tmx_filepath: str = ""
-    xml: xmlDocument = None
-    map_layers: NodeList = None      # XML data from tiled map file
+    xml: ET.Element = None
+    map_layers: ET.Element = None      # XML data from tiled map file
     boundaries: list = None
     spawn_points: list = None
     gateways: list = None
     objects: list = True         # list of interactable objects (aka actors)
-    npcs: xmlElement = None            # XML data of NPCs (aka characters)
+    npcs: list = None            # XML data of NPCs (aka characters)
     tilelist: str = ""   # flat tile data for C(++) object file
 
     def init(self,mapdict):
@@ -69,7 +67,7 @@ class MapObject:
                   "\" since it is included in: "+self.bitmap_filename)
         self.bitmap_width = int((self.columns*8)/mapdict['map_tilesize'])
         self.tilesize_factor = int(mapdict['map_tilesize']/8)
-        self.map_layers = self.xml.documentElement.getElementsByTagName("layer")
+        self.map_layers = self.xml.findall("layer")
 
     def name_lower(self):
         '''Returns the map name in all lower case.'''
