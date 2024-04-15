@@ -152,6 +152,13 @@ def calculate_tilemap_data(Map):
 
     return Map
 
+def calculate_movement_speed(origin,destination,pps,speed_factor=1.0):
+    '''Calculates movements speed for characters, so that they move uniformly across the map.
+       pps: pixel per second'''
+    distance = math.sqrt(((origin[0]-destination[0])**2)+((origin[1]-destination[1])**2))
+    speed = int(distance/float(pps) * speed_factor)
+    return speed
+
 def write_tilemap_globals_file():
     '''Creates a header file defining map data structs to be used by tilemaps.'''
     # pylint: disable=too-many-statements
@@ -355,8 +362,151 @@ def write_spawnpoint_data(spawn_point_data, cpp):
         cpp.write("        spawn_point_"+spawn_point.get("name")+",\n")
     cpp.write("    };\n\n")
 
-def write_actor_data(Map, cpp):
-    '''Writes data for interactable objects, like containers.'''
+def collect_walk_cycle_data(Map):
+    '''Collects data for walk_cycles'''
+    walk_cycle_data = []
+    for wc in Map.walk_cycles:
+        walk_cycle_origin = (float(wc.get("x")),float(wc.get("y")))
+        npc_id = None
+        idle_anims = {0:"{0,0}"}
+        pauses = {0:"60"}
+        for prop in wc.find("properties").findall("property"):
+            if prop.get("name") == "character":
+                npc_id = prop.get("value")
+            if prop.get("name") == "pause":
+                pauses[0] = prop.get("value")
+            if prop.get("name") == "idle_anim":
+                idle_anims[0] = prop.get("value")
+
+            for i in range(len(wc.find("polygon").get("points").split(" "))):
+                if prop.get("name") == str("pause_"+str(i)):
+                    pauses[i] = prop.get("value")
+                if prop.get("name") == str("idle_anim_"+str(i)):
+                    idle_anims[i] = prop.get("value")
+
+        npc_name = None
+        for npc in Map.npcs:
+            if npc.get("id") == npc_id:
+                npc_name = npc.get("name")
+
+        if not npc_name:
+            raise ValueError("Could not determine NPC for walk_cycle: "+wc.get("name"))
+
+        movements = []
+        for i,point in enumerate(wc.find("polygon").get("points").split(" ")):
+            x = int(float(point.split(",")[0])+walk_cycle_origin[0])
+            y = int(float(point.split(",")[1])+walk_cycle_origin[1])
+            movement_pause = pauses[0] if i+1 not in pauses else pauses[i+1]
+            movement_idle_anim = None if i+1 not in idle_anims else idle_anims[i+1]
+            movement = {
+                "x": x,
+                "y": y,
+                "speed": 16,
+                "pause": movement_pause,
+                "idle_anim": movement_idle_anim
+            }
+            movements.append(movement)
+
+        for i,mm in enumerate(movements):
+            origin = [mm["x"],mm["y"]]
+            destination = [movements[i+1]["x"],movements[i+1]["y"]] if i<len(movements)-2\
+                else [movements[0]["x"],movements[0]["y"]]
+            movements[i]["speed"] = str(calculate_movement_speed(origin,destination,1))
+
+        walk_cycle_data.append({
+                "name": npc_name+"_walk_cycle",
+                "hero_name": npc_name,
+                "movements": movements,
+                "idle_anim": idle_anims[0],
+                "pause": pauses[0]
+            })
+
+    return walk_cycle_data
+
+def write_walk_cycle_data(Map, cpp):
+    '''Writes data for walk_cycles'''
+    walk_cycle_data = collect_walk_cycle_data(Map)
+    
+    for wc in walk_cycle_data:
+        for i,mm in enumerate(wc["movements"]):
+            cpp.write("    const movement_t "+wc["hero_name"]+"_wc_m_"+str(i)+" = {\n")
+            cpp.write("        "+str(mm["x"])+","+str(mm["y"])+",\n")
+            cpp.write("        "+mm["pause"]+",\n")
+            cpp.write("        "+mm["speed"])
+            if mm["idle_anim"]:
+                cpp.write(",\n        "+mm["idle_anim"])
+            cpp.write("\n    };\n")
+
+        cpp.write("    const walk_cycle_t "+wc["name"]+" = {\n")
+        cpp.write("        "+str(len(wc["movements"]))+",\n")
+        cpp.write("        {")
+        for i,mm in enumerate(wc["movements"]):
+            cpp.write("&"+wc["hero_name"]+"_wc_m_"+str(i))
+            if i < len(wc["movements"])-1:
+                cpp.write(",")
+        cpp.write("}\n")
+        cpp.write("    };\n")
+
+    cpp.write("\n")
+
+    return len(walk_cycle_data)
+
+def write_npc_data(Map, cpp):
+    '''Writes data for NPCs'''
+    npc_data = []
+    for npc in Map.npcs:
+        face_direction,blurb,walk_cycle,idle_animation = None,None,None,None
+        for prop in npc.find("properties").findall("property"):
+            if prop.get("name") == "face_direction":
+                face_direction = prop.get("value")
+            if prop.get("name") == "blurb":
+                blurb = prop.get("value")
+            if prop.get("name") == "idle_animation":
+                idle_animation = prop.get("value")
+            if prop.get("name") == "walk_cycle":
+                walk_cycle = True
+
+        cpp.write("    const character_t "+npc.get("name")+ " = {\n")
+        cpp.write("        \""+npc.get("name")+"\",\n")
+
+        if face_direction == "up":
+            cpp.write("        "+config.NAMESPACE_UNDERSCORE.upper()+"CHAR_FACE_UP,\n")
+        elif face_direction == "down":
+            cpp.write("        "+config.NAMESPACE_UNDERSCORE.upper()+"CHAR_FACE_DOWN,\n")
+        elif face_direction == "left":
+            cpp.write("        "+config.NAMESPACE_UNDERSCORE.upper()+"CHAR_FACE_LEFT,\n")
+        elif face_direction == "right":
+            cpp.write("        "+config.NAMESPACE_UNDERSCORE.upper()+"CHAR_FACE_RIGHT,\n")
+        else:
+            raise ValueError("In character construction: Invalid face direction found for: " + npc.get("name"))
+
+        cpp.write("        "+str(int(float(npc.get("x"))))+","+str(int(float(npc.get("y"))))+",\n")
+
+        if blurb:
+            cpp.write("        &"+config.NAMESPACE_COLON.lower()+"texts::"+Map.name+"::"+npc.get("name")+"_blurb,\n")
+        else:
+            cpp.write("        nullptr,\n")
+        if idle_animation:
+            cpp.write("        "+idle_animation+",\n")
+        else:
+            cpp.write("        {0,0},\n")
+        if walk_cycle:
+            cpp.write("        &"+npc.get("name")+"_walk_cycle\n")
+        else:
+            cpp.write("        nullptr\n")
+
+        cpp.write("    };\n")
+        npc_data.append({'name':npc.get("name")})
+
+    cpp.write("    const character_t* characters = {\n")
+    for npc in npc_data:
+        cpp.write("        &"+npc['name']+"\n")
+    cpp.write("    };\n\n")
+
+    return len(npc_data)
+
+def write_container_data(Map, cpp):
+    '''Writes data for interactable containers.'''
     item_data = ["","potion"]
     chest_data = []
     for actors in Map.objects:
@@ -377,13 +527,24 @@ def write_actor_data(Map, cpp):
         cpp.write("    };\n")
         chest_data.append({'name':actors.get("name")})
 
-    cpp.write("\n    const container_t* containers = {\n")
+    cpp.write("    const container_t* containers = {\n")
     for chest in chest_data:
         cpp.write("        &"+chest['name']+"\n")
-    cpp.write("    };\n")
+    cpp.write("    };\n\n")
+
+    return len(chest_data)
+
+def write_actor_data(Map, cpp):
+    '''Writes data for interactable objects, like NPCs and containers.'''
+    num_npcs = write_npc_data(Map, cpp)
+    num_walk_cycles = write_walk_cycle_data(Map, cpp)
+    num_containers = write_container_data(Map, cpp)
 
     cpp.write("    const metadata_t metadata = {\n")
-    cpp.write("        "+str(len(chest_data))+",\n")
+    cpp.write("        ")
+    cpp.write(str(num_containers)+",")
+    cpp.write(str(num_npcs)+",")
+    cpp.write(str(num_walk_cycles)+"\n")
     cpp.write("    };\n")
 
 def write_object_data(Map, cpp):
@@ -425,6 +586,7 @@ def write_tilemap_cpp_file(Map):
         cpp.write("namespace " + config.NAMESPACE_COLON.lower() +\
                   "texts::"+Map.name_lower()+" {\n")
         cpp.write("    const text_t text = \"Crono received 1 potion.\";\n")
+        cpp.write("    const text_t hero_blurb = \"FIX ME, PLZ!\";\n")
         cpp.write("}\n\n")
 
         # TODO requires proper handling
@@ -464,11 +626,10 @@ def gather_map_data(Map):
         print("Source tiled map not modified, skipping generation of new data files")
         Map = None
     else:
-        Map.boundaries, Map.spawn_points, Map.gateways, Map.objects = [],[],[],[]
+        Map.boundaries, Map.spawn_points, Map.gateways, Map.objects, Map.npcs, Map.walk_cycles = [],[],[],[],[],[]
         for object_group in Map.xml.findall("objectgroup"):
             if config.PARSE_ACTORS and object_group.get("name") == "actors":
                 for obj in object_group.findall("object"):
-#                    print(ET.tostring(obj))
                     if obj.get("type") == "spawn_point"\
                     or obj.get("class") == "spawn_point":
                         Map.spawn_points.append(obj)
@@ -480,6 +641,16 @@ def gather_map_data(Map):
                     if obj.get("type") == "chest"\
                     or obj.get("class") == "chest":
                         Map.objects.append(obj)
+
+                    if obj.get("type") == "character"\
+                    or obj.get("class") == "character":
+                        Map.npcs.append(obj)
+
+            if config.PARSE_ACTORS and object_group.get("name") == "animations":
+                for obj in object_group.findall("object"):
+                    if obj.get("type") == "walk_cycle"\
+                    or obj.get("class") == "walk_cycle":
+                        Map.walk_cycles.append(obj)
 
             if config.PARSE_BOUNDARIES and object_group.get("name") == "boundaries":
                 for obj in object_group.findall("object"):

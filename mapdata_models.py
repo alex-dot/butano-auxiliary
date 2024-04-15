@@ -39,8 +39,9 @@ class MapObject:
     boundaries: list = None
     spawn_points: list = None
     gateways: list = None
-    objects: list = True         # list of interactable objects (aka actors)
-    npcs: list = None            # XML data of NPCs (aka characters)
+    objects: list = None         # list of interactable objects (aka actors)
+    npcs: list = None            # list of NPCs (aka characters)
+    walk_cycles: list = None       # list of walk_cycles
     tilelist: str = ""   # flat tile data for C(++) object file
 
     def init(self,mapdict):
