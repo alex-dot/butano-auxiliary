@@ -1,0 +1,9 @@
+{
+    "maps": [
+        {"name": "NAME_OF_MAP", "tmx": "LOCATION_OF_TILED_FILE.tmx"}
+    ],
+    "sprites": [
+        {"name": "NAME_OF_CONTAINER", "type": "container"},
+        {"name": "NAME_OF_CHARACTER", "type": "character"}
+    ]
+}

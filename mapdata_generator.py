@@ -271,6 +271,7 @@ def write_tilemap_header_file(Map):
 
         hpp.write("namespace "+config.NAMESPACE_COLON.lower()+"texts::"+Map.name_lower()+" {\n")
         hpp.write("    extern const text_t text;\n")
+        hpp.write("    extern const text_t hero_blurb;\n")
         hpp.write("\n}\n\n")
 
         hpp.write("namespace "+config.NAMESPACE_COLON.lower()+"actors::"+Map.name_lower()+" {\n")
@@ -616,47 +617,37 @@ def gather_map_data(Map):
     print("Generating map "+Map.name+" with dimensions: "+\
       str(Map.width)+"x"+str(Map.height)
     )
-    if not config.FORCE_MAP_DATA_GENERATION and \
-       os.path.exists("include/" + Map.name + ".hpp") and \
-       os.path.getctime("include/" + Map.name + ".hpp") >= \
-           os.path.getctime(Map.tmx_filepath) and \
-       os.path.exists("src/" + Map.name + ".cpp") and \
-       os.path.getctime("src/" + Map.name + ".cpp") >= \
-           os.path.getctime(Map.tmx_filepath):
-        print("Source tiled map not modified, skipping generation of new data files")
-        Map = None
-    else:
-        Map.boundaries, Map.spawn_points, Map.gateways, Map.objects, Map.npcs, Map.walk_cycles = [],[],[],[],[],[]
-        for object_group in Map.xml.findall("objectgroup"):
-            if config.PARSE_ACTORS and object_group.get("name") == "actors":
-                for obj in object_group.findall("object"):
-                    if obj.get("type") == "spawn_point"\
-                    or obj.get("class") == "spawn_point":
-                        Map.spawn_points.append(obj)
+    Map.boundaries, Map.spawn_points, Map.gateways, Map.objects, Map.npcs, Map.walk_cycles = [],[],[],[],[],[]
+    for object_group in Map.xml.findall("objectgroup"):
+        if config.PARSE_ACTORS and object_group.get("name") == "actors":
+            for obj in object_group.findall("object"):
+                if obj.get("type") == "spawn_point"\
+                or obj.get("class") == "spawn_point":
+                    Map.spawn_points.append(obj)
 
-                    if obj.get("type") == "gateway"\
-                    or obj.get("class") == "gateway":
-                        Map.gateways.append(calculate_boundary_data(obj))
+                if obj.get("type") == "gateway"\
+                or obj.get("class") == "gateway":
+                    Map.gateways.append(calculate_boundary_data(obj))
 
-                    if obj.get("type") == "chest"\
-                    or obj.get("class") == "chest":
-                        Map.objects.append(obj)
+                if obj.get("type") == "chest"\
+                or obj.get("class") == "chest":
+                    Map.objects.append(obj)
 
-                    if obj.get("type") == "character"\
-                    or obj.get("class") == "character":
-                        Map.npcs.append(obj)
+                if obj.get("type") == "character"\
+                or obj.get("class") == "character":
+                    Map.npcs.append(obj)
 
-            if config.PARSE_ACTORS and object_group.get("name") == "animations":
-                for obj in object_group.findall("object"):
-                    if obj.get("type") == "walk_cycle"\
-                    or obj.get("class") == "walk_cycle":
-                        Map.walk_cycles.append(obj)
+        if config.PARSE_ACTORS and object_group.get("name") == "animations":
+            for obj in object_group.findall("object"):
+                if obj.get("type") == "walk_cycle"\
+                or obj.get("class") == "walk_cycle":
+                    Map.walk_cycles.append(obj)
 
-            if config.PARSE_BOUNDARIES and object_group.get("name") == "boundaries":
-                for obj in object_group.findall("object"):
-                    if obj.get("type") == "boundary"\
-                    or obj.get("class") == "boundary":
-                        Map.boundaries.append(calculate_boundary_data(obj))
+        if config.PARSE_BOUNDARIES and object_group.get("name") == "boundaries":
+            for obj in object_group.findall("object"):
+                if obj.get("type") == "boundary"\
+                or obj.get("class") == "boundary":
+                    Map.boundaries.append(calculate_boundary_data(obj))
 
     return Map
 
@@ -673,9 +664,9 @@ if __name__ == "__main__":
                            help="""Save temporary files (like *_minimized.bmp and *_combined.bmp
                                    and some json files)""")
     argparser.add_argument('--map-file',dest='tmx_override',
-                           help='Specifiy tiled TMX map, ignoring maps.json; requires --map-name')
+                           help='Specifiy tiled TMX map, ignoring foton.json; requires --map-name')
     argparser.add_argument('--map-name',dest='map_name',
-                           help='Specifiy map name, ignoring maps.json; requires --map-file')
+                           help='Specifiy map name, ignoring foton.json; requires --map-file')
     argparser.add_argument('--no-minimization',dest='prevent_minimization',action='store_true',
                            help='Do not minimize tilemap before compression')
     argparser.add_argument('--no-map-consolidation',
@@ -741,13 +732,13 @@ if __name__ == "__main__":
     if args.header_line:
         config.FILE_HEADER = args.header_line
 
-    with open("graphics/ressources/maps.json", encoding="utf-8") as maps_json:
+    with open("graphics/ressources/foton.json", encoding="utf-8") as foton_json:
         if config.TMX_OVERRIDE and config.MAP_NAME:
-            maps = json.loads('[{"name":"'+config.MAP_NAME+'","tmx":"'+config.TMX_OVERRIDE+'"}]')
+            foton = json.loads('[{"name":"'+config.MAP_NAME+'","tmx":"'+config.TMX_OVERRIDE+'"}]')
         else:
-            maps = json.load(maps_json)
+            foton = json.load(foton_json)
 
-        map_data = tm.get_map_data(maps)
+        map_data = tm.get_map_data(foton['maps'])
         if not config.PREVENT_MAP_CONSOLIDATION:
             for map_name in map_data["combined_maps"]:
                 cmap_data = map_data["combined_maps"][map_name]
@@ -764,8 +755,17 @@ if __name__ == "__main__":
             Map = MapObject()
             Map.init(map_data["maps"][map_name])
             Map = gather_map_data(Map)
-            if Map:
-                Map = calculate_tilemap_data(Map)
+            Map = calculate_tilemap_data(Map)
+
+            if not config.FORCE_MAP_DATA_GENERATION and \
+               os.path.exists("include/" + Map.name + ".hpp") and \
+               os.path.getctime("include/" + Map.name + ".hpp") >= \
+                   os.path.getctime(Map.tmx_filepath) and \
+               os.path.exists("src/" + Map.name + ".cpp") and \
+               os.path.getctime("src/" + Map.name + ".cpp") >= \
+                   os.path.getctime(Map.tmx_filepath):
+                print("Source tiled map not modified, skipping generation of new data files")
+            else:
                 write_tilemap_header_file(Map)
                 write_tilemap_cpp_file(Map)
 

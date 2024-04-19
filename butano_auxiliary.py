@@ -17,7 +17,7 @@ from mapdata_models import MapObject
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(
         description="""
-            Generate butano-compatible map headers from tiled projects.
+            Generate minimized tilemaps and butano-compatible map headers from tiled projects.
             """)
     argparser.add_argument('-f','--force',dest='force',action='store_true',
                            help='Force all files generation')
@@ -25,13 +25,15 @@ if __name__ == "__main__":
                            help='Force tilemap image generation')
     argparser.add_argument('--force-map-gen',dest='force_map',action='store_true',
                            help='Force tilemap data generation')
+    argparser.add_argument('--force-instantiations',dest='force_insta',action='store_true',
+                           help='Force foton class instantiation generation')
     argparser.add_argument('-s','--save-temp-files',dest='save_temp_imgs',action='store_true',
                            help="""Save temporary files (like *_minimized.bmp and *_combined.bmp
                                    and some json files)""")
     argparser.add_argument('--map-file',dest='tmx_override',
-                           help='Specifiy tiled TMX map, ignoring maps.json; requires --map-name')
+                           help='Specifiy tiled TMX map, ignoring foton.json; requires --map-name')
     argparser.add_argument('--map-name',dest='map_name',
-                           help='Specifiy map name, ignoring maps.json; requires --map-file')
+                           help='Specifiy map name, ignoring foton.json; requires --map-file')
     argparser.add_argument('--no-minimization',dest='prevent_minimization',action='store_true',
                            help='Do not minimize tilemap before compression')
     argparser.add_argument('--no-map-consolidation',
@@ -59,8 +61,13 @@ if __name__ == "__main__":
     if args.force:
         config.FORCE_IMAGE_GENERATION = True
         config.FORCE_MAP_DATA_GENERATION = True
+        config.FORCE_INSTANTIATION_GENERATION = True
     if args.force_img:
         config.FORCE_IMAGE_GENERATION = True
+    if args.force_map:
+        config.FORCE_MAP_DATA_GENERATION = True
+    if args.force_insta:
+        config.FORCE_INSTANTIATION_GENERATION = True
     if args.save_temp_imgs:
         config.SAVE_TEMPORARY_FILES = True
     if ( args.tmx_override and not args.map_name ) or \
@@ -78,8 +85,6 @@ if __name__ == "__main__":
         config.PREVENT_TILEMAP_MINIMIZATION = True
     if args.prevent_consolidation:
         config.PREVENT_MAP_CONSOLIDATION = True
-    if args.force_map:
-        config.FORCE_MAP_DATA_GENERATION = True
     if args.namespace:
         config.NAMESPACE = args.namespace
         config.NAMESPACE_UNDERSCORE = config.NAMESPACE + "_"
@@ -100,13 +105,13 @@ if __name__ == "__main__":
     if args.header_line:
         config.FILE_HEADER = args.header_line
 
-    with open("graphics/ressources/maps.json", encoding="utf-8") as maps_json:
+    with open("graphics/ressources/foton.json", encoding="utf-8") as foton_json:
         if config.TMX_OVERRIDE and config.MAP_NAME:
-            maps = json.loads('[{"name":"'+config.MAP_NAME+'","tmx":"'+config.TMX_OVERRIDE+'"}]')
+            foton = json.loads('[{"name":"'+config.MAP_NAME+'","tmx":"'+config.TMX_OVERRIDE+'"}]')
         else:
-            maps = json.load(maps_json)
+            foton = json.load(foton_json)
 
-        map_data = tm.get_map_data(maps)
+        map_data = tm.get_map_data(foton['maps'])
         if not config.PREVENT_MAP_CONSOLIDATION:
             for map_name in map_data["combined_maps"]:
                 cmap_data = map_data["combined_maps"][map_name]
