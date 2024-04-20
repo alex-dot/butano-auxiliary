@@ -124,6 +124,7 @@ if __name__ == "__main__":
                             "tilemap_width":tilemap_width
                         }
 
+        all_maps = []
         for map_name in map_data["maps"]:
             Map = MapObject()
             Map.init(map_data["maps"][map_name])
