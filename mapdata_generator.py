@@ -15,143 +15,6 @@ import tilemap_compressor as tc
 import tilemap_minimizer as tm
 from mapdata_models import MapObject
 
-def parse_csv_tmx_map(tmx_map):
-    '''Parses tiled map file data (in CSV format).'''
-    clean_map = []
-    for val in tmx_map.split(","):
-        if val in ('\n',''):
-            continue
-        clean_map.append(int(val))
-    return clean_map
-
-def calculate_boundary_data(boundary):
-    '''This function is meant to be invoked for each boundary or similar polygon object in the
-       tiled TMX file. For such an object it creates a list of points that make up that polygon,
-       also takes note of the minimum and maximum values for x and y, and some more metadata.'''
-    number_of_points = len(boundary.find("polygon").get("points").split(" "))
-    origin = (boundary.get("x"),boundary.get("y"))
-
-    min_x,max_x,min_y,max_y = math.inf,0,math.inf,0
-    points = []
-
-    for point in boundary.find("polygon").get("points").split(" "):
-        x = int(float(point.split(",")[0]) + float(origin[0]))
-        x = 0 if x < 0 else x
-        y = int(float(point.split(",")[1]) + float(origin[1]))
-        y = 0 if y < 0 else y
-
-        min_x = x if x < min_x else min_x
-        max_x = x if x > max_x else max_x
-        min_y = y if y < min_y else min_y
-        max_y = y if y > max_y else max_y
-
-        points.append({'x':str(x),'y':str(y)})
-
-    map_name,spawn_point_name = None,None
-    if boundary.find("properties"):
-        for prop in boundary.find("properties").findall("property"):
-            if prop.get("name") == "destination":
-                map_name = prop.get("value")
-            if prop.get("name") == "spawnpoint":
-                spawn_point_name = prop.get("value")
-
-    return {
-                'number_of_points':number_of_points, 
-                'points':points,
-                'min_x':str(min_x),
-                'max_x':str(max_x),
-                'min_y':str(min_y),
-                'max_y':str(max_y),
-                'map_name':map_name,
-                'spawn_point_name':spawn_point_name
-            }
-
-def calculate_tilemap_data(Map):
-    '''This function puts a GBA comptabile number that corresponds to a tile in a tilemap image
-       in consecutive order for each layer that makes up the visuals of the map. It works roughly
-       like this:
-       For each tile in the GBA tilemap, transform the current tile to a dimension aware base_id, 
-       then get the tile_id of the tile from the tilemap metadata,
-       finally calculate the real_id of the tile in the tilemap image that base_id corresponds to.
-       After that, modify the real_id with flipping information.'''
-    for layer in Map.map_layers:
-        layer_name = layer.get("name")
-        tilemap = parse_csv_tmx_map(layer.find("data").text)
-        Map.tilelist += "        // "+layer_name+" layer\n"
-
-        tilelist = "        "
-
-        # since the GBA/butano puts part of the map into different screenblocks depending
-        # on the maps dimensions, we use this conditional to alter the map arithmetic
-        screenblock_flip = bool(Map.width == 64 and Map.height in (32,64))
-        screenblock_2nd_half = False
-        i,k = 0,0
-
-        while i < Map.width*Map.height:
-            base_id = int((i-int(i/Map.width)*Map.width)/Map.tilesize_factor)+\
-                      int(i/(Map.width*Map.tilesize_factor))*int(Map.width/Map.tilesize_factor)
-            x_offset = i % Map.tilesize_factor
-            y_offset = int(i/Map.width) % Map.tilesize_factor
-
-            tile_id = tilemap[base_id]
-            if not config.PREVENT_TILEMAP_MINIMIZATION:
-                for tile in Map.tiles:
-                    if Map.name in Map.tiles[tile]["first_gid"] and \
-                      Map.tiles[tile]["first_gid"][Map.name] <= \
-                      tile_id < Map.tiles[tile]["last_gid"][Map.name]:
-                        tile_id_temp = Map.tiles[tile]["used_tiles"].index(
-                            tile_id - Map.tiles[tile]["first_gid"][Map.name]
-                        )
-                        tile_id = tile_id_temp + Map.tiles[tile]['start_tile']
-            else:
-                tile_id = tilemap[base_id]-1 if tilemap[base_id] != 0 else 0
-
-            # offset all tiles to account for the transparent tile at the beginning
-            tile_id += 1 if tile_id != 0 else 0
-
-            real_id = tile_id%Map.bitmap_width*Map.tilesize_factor+\
-                      int(tile_id/Map.bitmap_width)*Map.bitmap_width*\
-                      Map.tilesize_factor*Map.tilesize_factor+\
-                      y_offset*Map.bitmap_width*Map.tilesize_factor + x_offset
-
-            flip_offset = 0
-            if Map.bitmap[real_id]["h_flipped"]:
-                flip_offset += config.H_FLIP
-            if Map.bitmap[real_id]["v_flipped"]:
-                flip_offset += config.V_FLIP
-            if not Map.bitmap[real_id]["unique"]:
-                real_id = Map.bitmap[real_id]["relative"][1]*Map.bitmap_width*Map.tilesize_factor+\
-                          Map.bitmap[real_id]["relative"][0]
-            real_id -= Map.bitmap[real_id]["non_unique_tile_count"]
-            real_id += flip_offset
-            tilelist += str(real_id) + ","
-
-            if (i+1) % Map.width == 0 and i > 0:
-                tilelist += "\n"
-            if (i+1) % 16 == 0 and i > 0:
-                tilelist += "\n" + "        "
-
-            if screenblock_flip and k == int(Map.width/Map.tilesize_factor)-1:
-                i += int(Map.width/Map.tilesize_factor)
-                k = -1
-            if screenblock_flip and not screenblock_2nd_half and i == Map.width*32-1:
-                i = int(Map.width/Map.tilesize_factor)-1
-                screenblock_2nd_half = True
-            if screenblock_flip and screenblock_2nd_half\
-            and i == Map.width*32+int(Map.width/Map.tilesize_factor)-1:
-                i = Map.width*32-1
-                screenblock_2nd_half = False
-            if screenblock_flip and not screenblock_2nd_half and i == Map.width*64-1:
-                i = Map.width*32+int(Map.width/Map.tilesize_factor)-1
-                screenblock_2nd_half = True
-
-            i += 1
-            k += 1
-
-        Map.tilelist += tilelist[:-8]
-
-    return Map
-
 def calculate_movement_speed(origin,destination,pps,speed_factor=1.0):
     '''Calculates movements speed for characters, so that they move uniformly across the map.
        pps: pixel per second'''
@@ -269,13 +132,8 @@ def write_tilemap_header_file(Map):
 
         hpp.write("\n}\n\n")
 
-        hpp.write("namespace "+config.NAMESPACE_COLON.lower()+"texts::"+Map.name_lower()+" {\n")
-        hpp.write("    extern const text_t text;\n")
-        hpp.write("    extern const text_t hero_blurb;\n")
-        hpp.write("\n}\n\n")
-
         hpp.write("namespace "+config.NAMESPACE_COLON.lower()+"actors::"+Map.name_lower()+" {\n")
-        hpp.write("    extern const container_t chest01;\n")
+        hpp.write("    extern const character_t* characters;\n")
         hpp.write("    extern const container_t* containers;\n")
         hpp.write("    alignas(int) extern const metadata_t metadata;\n")
 
@@ -537,8 +395,8 @@ def write_container_data(Map, cpp):
 
 def write_actor_data(Map, cpp):
     '''Writes data for interactable objects, like NPCs and containers.'''
-    num_npcs = write_npc_data(Map, cpp)
     num_walk_cycles = write_walk_cycle_data(Map, cpp)
+    num_npcs = write_npc_data(Map, cpp)
     num_containers = write_container_data(Map, cpp)
 
     cpp.write("    const metadata_t metadata = {\n")
@@ -611,45 +469,6 @@ def write_tilemap_cpp_file(Map):
             write_object_data(Map, cpp)
 
         cpp.write("}\n")
-
-def gather_map_data(Map):
-    '''Gathers all extra data, like spawn points and boundaries, from tiled TMX maps.'''
-    print("Generating map "+Map.name+" with dimensions: "+\
-      str(Map.width)+"x"+str(Map.height)
-    )
-    Map.boundaries, Map.spawn_points, Map.gateways, Map.objects, Map.npcs, Map.walk_cycles = [],[],[],[],[],[]
-    for object_group in Map.xml.findall("objectgroup"):
-        if config.PARSE_ACTORS and object_group.get("name") == "actors":
-            for obj in object_group.findall("object"):
-                if obj.get("type") == "spawn_point"\
-                or obj.get("class") == "spawn_point":
-                    Map.spawn_points.append(obj)
-
-                if obj.get("type") == "gateway"\
-                or obj.get("class") == "gateway":
-                    Map.gateways.append(calculate_boundary_data(obj))
-
-                if obj.get("type") == "chest"\
-                or obj.get("class") == "chest":
-                    Map.objects.append(obj)
-
-                if obj.get("type") == "character"\
-                or obj.get("class") == "character":
-                    Map.npcs.append(obj)
-
-        if config.PARSE_ACTORS and object_group.get("name") == "animations":
-            for obj in object_group.findall("object"):
-                if obj.get("type") == "walk_cycle"\
-                or obj.get("class") == "walk_cycle":
-                    Map.walk_cycles.append(obj)
-
-        if config.PARSE_BOUNDARIES and object_group.get("name") == "boundaries":
-            for obj in object_group.findall("object"):
-                if obj.get("type") == "boundary"\
-                or obj.get("class") == "boundary":
-                    Map.boundaries.append(calculate_boundary_data(obj))
-
-    return Map
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(
@@ -754,8 +573,11 @@ if __name__ == "__main__":
         for map_name in map_data["maps"]:
             Map = MapObject()
             Map.init(map_data["maps"][map_name])
-            Map = gather_map_data(Map)
-            Map = calculate_tilemap_data(Map)
+            Map.gather_map_data()
+            Map.calculate_tilemap_data()
+            print("Generating map "+Map.name+" with dimensions: "+\
+              str(Map.width)+"x"+str(Map.height)
+            )
 
             if not config.FORCE_MAP_DATA_GENERATION and \
                os.path.exists("include/" + Map.name + ".hpp") and \

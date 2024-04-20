@@ -127,9 +127,19 @@ if __name__ == "__main__":
         for map_name in map_data["maps"]:
             Map = MapObject()
             Map.init(map_data["maps"][map_name])
-            Map = mg.gather_map_data(Map)
-            if Map:
-                Map = mg.calculate_tilemap_data(Map)
+            Map.gather_map_data()
+            Map.calculate_tilemap_data()
+            all_maps.append(Map)
+
+            if not config.FORCE_MAP_DATA_GENERATION and \
+               os.path.exists("include/" + Map.name + ".hpp") and \
+               os.path.getctime("include/" + Map.name + ".hpp") >= \
+                   os.path.getctime(Map.tmx_filepath) and \
+               os.path.exists("src/" + Map.name + ".cpp") and \
+               os.path.getctime("src/" + Map.name + ".cpp") >= \
+                   os.path.getctime(Map.tmx_filepath):
+                print("Source tiled map not modified, skipping generation of new data files")
+            else:
                 mg.write_tilemap_header_file(Map)
                 mg.write_tilemap_cpp_file(Map)
 
