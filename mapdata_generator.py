@@ -179,7 +179,7 @@ def write_boundary_data(boundary_data, typename, cpp):
             cpp.write("\"\",\"\",\n")
         elif typename == "gateways":
             cpp.write("\""+boundary['map_name']+"\",")
-            cpp.write("\""+boundary['spawn_point_name']+"\",\n")
+            cpp.write("\""+boundary['spawn_point_name'][:5]+"\",\n")
     cpp.write("    };\n\n")
 
 def write_spawnpoint_data(spawn_point_data, cpp):
